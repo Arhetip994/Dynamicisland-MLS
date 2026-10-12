@@ -27,6 +27,8 @@ public partial class MainWindow
     const double MaxLineFillSeconds = 8, MinLineFillSeconds = 0.3;
     const double LineScrollStagger = 0.04;
     const int VisibleLineRange = 4, BlurredLineRange = 2;
+    const double LyricWheelStep = 36;
+    const double LyricManualScrollTimeout = 4.0;
     static readonly TimeSpan LyricLead = TimeSpan.FromMilliseconds(200);
 
     sealed class PlayerLine(Lyric row, double middle)
@@ -51,6 +53,9 @@ public partial class MainWindow
     int _playerIndex = -1;
     int _playerHoverIndex = -1;
     Point _lyricClickStart;
+    double _lyricDragStartScroll;
+    bool _lyricDragging;
+    double _playerManualScrollUntil;
     bool _playerHasLyricRoom;
     bool _playerLyricsPending;
 
@@ -216,7 +221,10 @@ public partial class MainWindow
         FillSungLine();
 
         double middle = _playerRows[Math.Max(index, 0)].Middle;
-        ScrollPlayerLyrics(PlayerLyricBox.Height / 2 - middle, Math.Max(was, 0), Math.Max(index, 0), snap || !smoothTransition);
+        if (snap || _clock.Elapsed.TotalSeconds >= _playerManualScrollUntil)
+        {
+            ScrollPlayerLyrics(PlayerLyricBox.Height / 2 - middle, Math.Max(was, 0), Math.Max(index, 0), snap || !smoothTransition);
+        }
     }
 
     void ScrollPlayerLyrics(double to, int was, int index, bool snap)
@@ -243,6 +251,16 @@ public partial class MainWindow
 
     void AdvancePlayerLyrics(double now, double dt)
     {
+        if (_playerManualScrollUntil > 0 && now >= _playerManualScrollUntil)
+        {
+            _playerManualScrollUntil = 0;
+            if (_playerIndex >= 0 && _playerIndex < _playerRows.Length)
+            {
+                double middle = _playerRows[_playerIndex].Middle;
+                ScrollPlayerLyrics(PlayerLyricBox.Height / 2 - middle, _playerIndex, _playerIndex, false);
+            }
+        }
+
         if (!_playerScrolling) return;
         bool rolling = false;
         foreach (PlayerLine line in _playerRows)
@@ -290,6 +308,8 @@ public partial class MainWindow
         _playerRows = new PlayerLine[lines.Length];
         _playerScrolling = false;
         _playerHoverIndex = -1;
+        _playerManualScrollUntil = 0;
+        _lyricDragging = false;
 
         double width = PlayerLyricBox.Width, top = 0, size = Settings.LyricEffects ? UnsungLineScale : 1;
         for (int i = 0; i < lines.Length; i++)
@@ -376,37 +396,99 @@ public partial class MainWindow
         _playerRows[index].Row.Progress = Math.Clamp((LyricTime - start).TotalSeconds / seconds, 0, 1);
     }
 
+    void ScrollPlayerLyricsManual(double delta)
+    {
+        ScrollPlayerLyricsTo(_playerScroll + delta);
+    }
+
+    void ScrollPlayerLyricsTo(double desired)
+    {
+        if (_playerRows.Length == 0) return;
+
+        double minMiddle = _playerRows[0].Middle;
+        double maxMiddle = _playerRows[^1].Middle;
+        double maxScroll = PlayerLyricBox.Height / 2 - minMiddle;
+        double minScroll = PlayerLyricBox.Height / 2 - maxMiddle;
+
+        double lo = Math.Min(minScroll, maxScroll);
+        double hi = Math.Max(minScroll, maxScroll);
+        double target = Math.Clamp(desired, lo, hi);
+
+        _playerScroll = target;
+        _playerManualScrollUntil = _clock.Elapsed.TotalSeconds + LyricManualScrollTimeout;
+
+        for (int i = 0; i < _playerRows.Length; i++)
+        {
+            PlayerLine line = _playerRows[i];
+            line.Y.Target = target;
+            line.DueAt = 0;
+        }
+        _playerScrolling = true;
+        StartSeekLoop();
+    }
+
+    int FindLyricLineAt(double y)
+    {
+        int bestIndex = -1;
+        double bestDistance = double.MaxValue;
+        for (int i = 0; i < _playerRows.Length; i++)
+        {
+            PlayerLine line = _playerRows[i];
+            double rowMiddle = line.Middle + LineOffsetOf(line.Row).Y;
+            double dist = Math.Abs(y - rowMiddle);
+            if (dist < bestDistance)
+            {
+                bestDistance = dist;
+                bestIndex = i;
+            }
+        }
+        return bestDistance <= 35 ? bestIndex : -1;
+    }
+
+    void UpdateHoverAt(Point at)
+    {
+        SetPlayerLyricHover(FindLyricLineAt(at.Y));
+    }
+
     void PlayerLyricBox_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
         _lyricClickStart = e.GetPosition(PlayerLyricBox);
+        _lyricDragStartScroll = _playerScroll;
+        _lyricDragging = false;
         PlayerLyricBox.CaptureMouse();
     }
 
     void PlayerLyricBox_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_view != View.MediaBig || _playerLines.Length == 0) return;
+        if (_view != View.MediaBig || _playerRows.Length == 0) return;
         Point at = e.GetPosition(PlayerLyricBox);
-        int hover = -1;
-        double bestDist = double.MaxValue;
-        for (int i = 0; i < _playerRows.Length; i++)
+
+        if (PlayerLyricBox.IsMouseCaptured && e.LeftButton == MouseButtonState.Pressed)
         {
-            PlayerLine line = _playerRows[i];
-            double rowMiddle = line.Middle + LineOffsetOf(line.Row).Y;
-            double dist = Math.Abs(at.Y - rowMiddle);
-            if (dist < bestDist)
+            double dy = at.Y - _lyricClickStart.Y;
+            if (Math.Abs(dy) > 5 || _lyricDragging)
             {
-                bestDist = dist;
-                hover = i;
+                _lyricDragging = true;
+                ScrollPlayerLyricsTo(_lyricDragStartScroll + dy);
+                return;
             }
         }
-        if (bestDist > 30) hover = -1;
-        SetPlayerLyricHover(hover);
+
+        UpdateHoverAt(at);
     }
 
     void PlayerLyricBox_MouseLeave(object sender, MouseEventArgs e)
     {
-        SetPlayerLyricHover(-1);
+        if (!_lyricDragging) SetPlayerLyricHover(-1);
+    }
+
+    void PlayerLyricBox_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_view != View.MediaBig || _playerRows.Length == 0) return;
+        e.Handled = true;
+        ScrollPlayerLyricsManual((e.Delta / 120.0) * LyricWheelStep);
+        UpdateHoverAt(e.GetPosition(PlayerLyricBox));
     }
 
     void SetPlayerLyricHover(int hover)
@@ -435,23 +517,12 @@ public partial class MainWindow
         if (_view != View.MediaBig || _playerLines.Length == 0 || !_media.Seekable || _media.Duration <= TimeSpan.Zero) return;
 
         Point at = e.GetPosition(PlayerLyricBox);
-        if ((at - _lyricClickStart).Length > 10) return;
+        bool dragged = _lyricDragging || (at - _lyricClickStart).Length > 10;
+        _lyricDragging = false;
+        if (dragged) return;
 
-        int bestIndex = -1;
-        double bestDistance = double.MaxValue;
-        for (int i = 0; i < _playerRows.Length; i++)
-        {
-            PlayerLine line = _playerRows[i];
-            double rowMiddle = line.Middle + LineOffsetOf(line.Row).Y;
-            double dist = Math.Abs(at.Y - rowMiddle);
-            if (dist < bestDistance)
-            {
-                bestDistance = dist;
-                bestIndex = i;
-            }
-        }
-
-        if (bestIndex >= 0 && bestDistance <= 35)
+        int bestIndex = FindLyricLineAt(at.Y);
+        if (bestIndex >= 0)
         {
             SeekToLyric(bestIndex);
         }
@@ -461,6 +532,8 @@ public partial class MainWindow
     {
         if (index < 0 || index >= _playerLines.Length || !_media.Seekable || _media.Duration <= TimeSpan.Zero) return;
 
+        _playerManualScrollUntil = 0;
+        _lyricDragging = false;
         TimeSpan target = _playerLines[index].Time;
         double fraction = Math.Clamp(target.TotalSeconds / _media.Duration.TotalSeconds, 0, 1);
         _scrubFraction = fraction;

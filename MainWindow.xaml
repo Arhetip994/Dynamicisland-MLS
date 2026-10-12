@@ -570,7 +570,8 @@
                             MouseLeftButtonDown="PlayerLyricBox_MouseLeftButtonDown"
                             MouseMove="PlayerLyricBox_MouseMove"
                             MouseLeave="PlayerLyricBox_MouseLeave"
-                            MouseLeftButtonUp="PlayerLyricBox_MouseLeftButtonUp">
+                            MouseLeftButtonUp="PlayerLyricBox_MouseLeftButtonUp"
+                            MouseWheel="PlayerLyricBox_MouseWheel">
                         <Canvas.OpacityMask>
                             <LinearGradientBrush MappingMode="Absolute" StartPoint="0,0" EndPoint="0,70">
                                 <GradientStop Color="#00000000" Offset="0"/>

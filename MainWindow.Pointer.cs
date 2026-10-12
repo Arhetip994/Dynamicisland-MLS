@@ -277,6 +277,11 @@ public partial class MainWindow
         else if (_view == View.Look && GapRow.IsMouseOver) SetGap(Settings.Gap + step * GapStep);
         else if (_view == View.Look && AuraIntensityRow.IsMouseOver) SetAuraIntensity(Settings.AuraBassIntensityPercent + step * 5);
         else if (_view == View.Shelf && ShelfOverflow > 0) ScrollShelf(-step);
+        else if (_view == View.MediaBig && PlayerLyricBox.IsMouseOver && _playerRows.Length > 0)
+        {
+            ScrollPlayerLyricsManual((e.Delta / 120.0) * LyricWheelStep);
+            UpdateHoverAt(Mouse.GetPosition(PlayerLyricBox));
+        }
         else if (_view == View.MediaBig && Settings.AppVolume && _audio.AdjustAppVolume(_media.Source, step * WheelVolumeStep, out float level))
             ShowPlayerVolume(level, false, true);
         else if (IsVolumeAtLimit(up)) OvershootVolume(up);
