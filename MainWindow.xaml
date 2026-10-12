@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:DynamicIsland"
-        Title="Dynamic Island" Width="680" Height="550"
+        Title="Dynamic Island" Width="680" Height="580"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" ShowActivated="False" Topmost="True" ResizeMode="NoResize"
         Focusable="False" UseLayoutRounding="True"
@@ -122,6 +122,7 @@
 
         <Style x:Key="RowLabel" TargetType="TextBlock">
             <Setter Property="Margin" Value="29,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
@@ -369,7 +370,7 @@
 
     </Window.Resources>
 
-    <Grid x:Name="Root" Width="620" Height="520" Opacity="0"
+    <Grid x:Name="Root" Width="620" Height="720" Opacity="0"
           HorizontalAlignment="Center" VerticalAlignment="Top" RenderTransformOrigin="0.5,0"
           MouseLeftButtonDown="Root_MouseLeftButtonDown" MouseLeftButtonUp="Root_MouseLeftButtonUp"
           MouseMove="Root_MouseMove"
@@ -528,6 +529,28 @@
                     </StackPanel>
                 </Grid>
 
+                <Grid x:Name="ClipboardView" Width="320" Height="36" HorizontalAlignment="Center" VerticalAlignment="Top" Cursor="Hand" MouseLeftButtonDown="ClipboardView_Click">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid Grid.Column="0" Margin="12,0,8,0" VerticalAlignment="Center">
+                        <local:Icon x:Name="ClipboardIcon" Kind="Clipboard" Width="18" Height="18" Fill="White"/>
+                        <Image x:Name="ClipboardThumb" Width="22" Height="22" Stretch="UniformToFill" Visibility="Collapsed">
+                            <Image.Clip>
+                                <RectangleGeometry Rect="0,0,22,22" RadiusX="5" RadiusY="5"/>
+                            </Image.Clip>
+                        </Image>
+                    </Grid>
+                    <TextBlock x:Name="ClipboardText" Grid.Column="1" FontSize="12.5" FontWeight="Medium" Foreground="White"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                    <Border Grid.Column="2" Background="#26FFFFFF" CornerRadius="8" Padding="6,2" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="ClipboardBadge" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource Dim}"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                </Grid>
+
                 <Grid x:Name="MediaBigView" Width="380" Height="176" HorizontalAlignment="Center" VerticalAlignment="Top">
                     <local:Aura x:Name="Glow" Height="176" VerticalAlignment="Bottom" IsHitTestVisible="False"/>
                     <local:StarField x:Name="PlayerStars" Height="176" VerticalAlignment="Bottom" IsHitTestVisible="False" Visibility="Collapsed"/>
@@ -543,7 +566,11 @@
 
                     <Canvas x:Name="PlayerLyricBox" Width="340" Height="70" Margin="0,92,0,0" Opacity="0"
                             HorizontalAlignment="Center" VerticalAlignment="Top"
-                            Background="Transparent" ClipToBounds="True" IsHitTestVisible="False">
+                            Background="Transparent" ClipToBounds="True" Cursor="Hand"
+                            MouseLeftButtonDown="PlayerLyricBox_MouseLeftButtonDown"
+                            MouseMove="PlayerLyricBox_MouseMove"
+                            MouseLeave="PlayerLyricBox_MouseLeave"
+                            MouseLeftButtonUp="PlayerLyricBox_MouseLeftButtonUp">
                         <Canvas.OpacityMask>
                             <LinearGradientBrush MappingMode="Absolute" StartPoint="0,0" EndPoint="0,70">
                                 <GradientStop Color="#00000000" Offset="0"/>
@@ -552,8 +579,8 @@
                                 <GradientStop Color="#00000000" Offset="1"/>
                             </LinearGradientBrush>
                         </Canvas.OpacityMask>
-                        <local:Shimmer x:Name="PlayerLyricWait" Width="340" Height="70" Opacity="0"/>
-                        <Canvas x:Name="PlayerLyricLines"/>
+                        <local:Shimmer x:Name="PlayerLyricWait" Width="340" Height="70" Opacity="0" IsHitTestVisible="False"/>
+                        <Canvas x:Name="PlayerLyricLines" IsHitTestVisible="False"/>
                     </Canvas>
 
                     <Grid Height="20" Margin="20,0,20,59" VerticalAlignment="Bottom">
@@ -816,7 +843,7 @@
                     </local:RowList>
                 </Grid>
 
-                <Grid x:Name="SettingsView" Width="320" Height="454" HorizontalAlignment="Center" VerticalAlignment="Top">
+                <Grid x:Name="SettingsView" Width="320" Height="492" HorizontalAlignment="Center" VerticalAlignment="Top">
                     <local:RowList Margin="10,8,10,0">
                         <Button Style="{StaticResource BackButton}" Content="НАСТРОЙКИ" Click="SettingsBack_Click"/>
                         <Button Style="{StaticResource RowButton}" Click="Lyrics_Click">
@@ -876,6 +903,13 @@
                                 <local:Icon Style="{StaticResource RowIcon}" Kind="Wifi"/>
                                 <TextBlock Style="{StaticResource RowLabel}" Text="Уведомления о сети"/>
                                 <local:Toggle x:Name="NetworkSwitch" Style="{StaticResource RowSwitch}"/>
+                            </Grid>
+                        </Button>
+                        <Button Style="{StaticResource RowButton}" Click="ClipboardPeek_Click">
+                            <Grid>
+                                <local:Icon Style="{StaticResource RowIcon}" Kind="Clipboard"/>
+                                <TextBlock Style="{StaticResource RowLabel}" Text="Превью буфера обмена"/>
+                                <local:Toggle x:Name="ClipboardPeekSwitch" Style="{StaticResource RowSwitch}"/>
                             </Grid>
                         </Button>
                         <Button Style="{StaticResource RowButton}" Click="Fullscreen_Click">
@@ -952,7 +986,7 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid x:Name="LookView" Width="352" Height="568" HorizontalAlignment="Center" VerticalAlignment="Top">
+                <Grid x:Name="LookView" Width="352" Height="644" HorizontalAlignment="Center" VerticalAlignment="Top">
                     <local:RowList Margin="10,8,10,0">
                         <Button Style="{StaticResource BackButton}" Content="ОФОРМЛЕНИЕ" Click="SettingsBack_Click"/>
                         <Button x:Name="SizeRow" Style="{StaticResource RowButton}">
@@ -1035,6 +1069,23 @@
                                 </RadioButton>
                             </UniformGrid>
                         </Border>
+                        <Button Style="{StaticResource RowButton}" Click="ReactiveAura_Click">
+                            <Grid>
+                                <local:Icon Style="{StaticResource RowIcon}" Kind="Stars"/>
+                                <TextBlock Style="{StaticResource RowLabel}" Text="Пульсация под бас"/>
+                                <local:Toggle x:Name="ReactiveAuraSwitch" Style="{StaticResource RowSwitch}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="AuraIntensityRow" Style="{StaticResource RowButton}">
+                            <Grid>
+                                <local:Icon Style="{StaticResource RowIcon}" Kind="Loud"/>
+                                <TextBlock Style="{StaticResource RowLabel}" Text="Сила реакции"/>
+                                <local:Scrubber x:Name="AuraIntensitySlider" Style="{StaticResource RowSlider}"
+                                                Minimum="10" Maximum="100" Step="5" Changed="AuraIntensitySlider_Changed"/>
+                                <local:Digits x:Name="AuraIntensityText" Foreground="{StaticResource Dim}"
+                                              HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Button>
                         <Button Style="{StaticResource RowButton}" Click="LyricChangeRow_Click">
                             <Grid>
                                 <local:Icon Style="{StaticResource RowIcon}" Kind="Lines"/>

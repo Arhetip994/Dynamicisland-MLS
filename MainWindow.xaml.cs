@@ -13,7 +13,7 @@ namespace DynamicIsland;
 
 public partial class MainWindow : Window
 {
-    enum View { Idle, Media, Timer, Record, Volume, Charge, Focus, Toast, Notice, MediaBig, IdleBig, TimerBig, TimerSet, RecordBig, RecordSet, Menu, Settings, Look, Shelf, LyricsSource }
+    enum View { Idle, Media, Timer, Record, Volume, Charge, Focus, Toast, Notice, MediaBig, IdleBig, TimerBig, TimerSet, RecordBig, RecordSet, Menu, Settings, Look, Shelf, LyricsSource, ClipboardPeek }
 
     enum Panel { None, Player, Timer, TimerSet, Record, Menu, Settings, Look, Shelf, LyricsSource }
 
@@ -37,10 +37,11 @@ public partial class MainWindow : Window
         [View.RecordBig] = new(340, 92, 40),
         [View.RecordSet] = new(320, 92, 40),
         [View.Menu] = new(300, 288, 34),
-        [View.Settings] = new(320, 454, 34),
+        [View.Settings] = new(320, 492, 34),
         [View.Look] = new(352, LookHeight, 34),
         [View.Shelf] = new(380, 136, 34),
         [View.LyricsSource] = new(320, 360, 34),
+        [View.ClipboardPeek] = new(320, 36, 18),
     };
 
     readonly record struct MediaSpot(
@@ -59,7 +60,7 @@ public partial class MainWindow : Window
 
     static readonly View[] MenuPages = [View.Settings, View.Look, View.TimerSet, View.TimerBig, View.RecordSet, View.RecordBig, View.Shelf, View.LyricsSource];
 
-    const double HostWidth = 620, HostHeight = 520;
+    const double HostWidth = 620, HostHeight = 720;
     const double CompactMaxHeight = 40;
     const double BarelyVisible = 0.05;
     const double IntroScale = 0.3, IntroOffset = -50;
@@ -76,6 +77,8 @@ public partial class MainWindow : Window
     readonly MediaService _media;
     readonly LyricsService _lyrics = new();
     readonly NetworkService _network;
+    readonly ClipboardService _clipboard;
+    ClipboardItem? _currentClipboardItem;
     readonly Stopwatch _clock = Stopwatch.StartNew();
     readonly DispatcherTimer _ticker = new() { Interval = TickInterval };
     readonly DelayedAction _transientTimeout, _collapseTimeout, _awayTimeout;
@@ -123,6 +126,7 @@ public partial class MainWindow : Window
             [View.Look] = LookView,
             [View.Shelf] = ShelfView,
             [View.LyricsSource] = LyricsSourcePage,
+            [View.ClipboardPeek] = ClipboardView,
         };
         _spotSprings = [_coverLeft, _coverTop, _coverSize, _barsRight, _barsCenterY, _barsWidth, _barsHeight, _barsOpen];
         _springs =
@@ -152,6 +156,8 @@ public partial class MainWindow : Window
         _lyrics.Changed += OnLyricsChanged;
         _network = new NetworkService(Dispatcher);
         _network.Changed += OnNetworkChanged;
+        _clipboard = new ClipboardService(Dispatcher);
+        _clipboard.Copied += OnClipboardCopied;
         _shelf = new Shelf(Dispatcher);
         _shelf.Changed += SyncShelf;
         _shelf.PictureLoaded += OnShelfPictureLoaded;
@@ -186,6 +192,7 @@ public partial class MainWindow : Window
         Eq.Fill = _accentBrush;
         Eq.Dots = Settings.Dots;
         SeekLines.Accent = _accentBrush;
+        ClipboardIcon.Fill = _accentBrush;
         PlayerMatrix.Rounding = PillShapes[View.MediaBig].Radius;
         SyncBackdrop();
         foreach (FrameworkElement icon in new FrameworkElement[] { PlayIcon, PauseIcon, TimerPlayIcon, TimerPauseIcon })
@@ -202,7 +209,14 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
         Native.HideFromTaskSwitcher(_hwnd);
+        Native.AddClipboardFormatListener(_hwnd);
         if (Native.RegisterShellHook(_hwnd)) HwndSource.FromHwnd(_hwnd).AddHook(OnShellMessage);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        if (_hwnd != IntPtr.Zero) Native.RemoveClipboardFormatListener(_hwnd);
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
@@ -222,6 +236,12 @@ public partial class MainWindow : Window
 
     IntPtr OnShellMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == Native.WM_CLIPBOARDUPDATE)
+        {
+            _clipboard.OnClipboardUpdate();
+            return IntPtr.Zero;
+        }
+
         switch (Native.MediaKeyOf(msg, wParam, lParam))
         {
             case Native.MediaKey.VolumeUp when IsVolumeAtLimit(true):
@@ -443,5 +463,63 @@ public partial class MainWindow : Window
     {
         _sentAway = false;
         UpdateTargets();
+    }
+
+    void OnClipboardCopied(ClipboardItem item)
+    {
+        if (!Settings.ClipboardPeekEnabled) return;
+        _currentClipboardItem = item;
+
+        ClipboardText.Text = item.PreviewText;
+        ClipboardBadge.Text = item.Badge;
+
+        if (item.Thumbnail != null)
+        {
+            ClipboardIcon.Visibility = Visibility.Collapsed;
+            ClipboardThumb.Source = item.Thumbnail;
+            ClipboardThumb.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ClipboardThumb.Visibility = Visibility.Collapsed;
+            ClipboardIcon.Visibility = Visibility.Visible;
+            ClipboardIcon.Kind = item.Kind switch
+            {
+                ClipboardKind.Link => Glyph.Link,
+                ClipboardKind.Image => Glyph.Image,
+                ClipboardKind.File => Glyph.Folder,
+                _ => Glyph.Clipboard,
+            };
+        }
+
+        ShowTransient(View.ClipboardPeek, 1.8);
+    }
+
+    void ClipboardView_Click(object sender, MouseButtonEventArgs e)
+    {
+        OnClipboardPeekClicked();
+        e.Handled = true;
+    }
+
+    void OnClipboardPeekClicked()
+    {
+        if (_currentClipboardItem == null) return;
+        _transientTimeout.Cancel();
+
+        if (_currentClipboardItem.Kind == ClipboardKind.Link && Uri.TryCreate(_currentClipboardItem.FullText, UriKind.Absolute, out Uri? uri))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch { }
+        }
+        else if (_currentClipboardItem.Kind == ClipboardKind.Text)
+        {
+            Notify(Glyph.Clipboard, _accentBrush, "Скопировано в буфер", _currentClipboardItem.FullText, 2.5);
+            return;
+        }
+
+        EndTransient();
     }
 }

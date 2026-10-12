@@ -18,7 +18,7 @@ static class Native
     const long WS_POPUP = 0x80000000;
     const uint LWA_ALPHA = 2;
     const int SW_SHOWNOACTIVATE = 4;
-    const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010;
+    const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
     const uint MONITOR_DEFAULTTONEAREST = 2;
     const uint MONITORINFOF_PRIMARY = 1;
     const int VK_CONTROL = 0x11;
@@ -28,6 +28,7 @@ static class Native
     const int ClassNameCapacity = 64;
     const int DWMWA_USE_HOSTBACKDROPBRUSH = 17;
     const int DQTYPE_THREAD_CURRENT = 2, DQTAT_COM_STA = 2;
+    public const int WM_CLIPBOARDUPDATE = 0x031D;
     static readonly IntPtr HWND_TOPMOST = new(-1);
     static readonly int ShellMessage = (int)RegisterWindowMessage("SHELLHOOK");
 
@@ -55,14 +56,26 @@ static class Native
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int command);
     [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
     [DllImport("CoreMessaging.dll")]
     static extern int CreateDispatcherQueueController(DispatcherQueueOptions options, out IntPtr controller);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
@@ -122,8 +135,8 @@ static class Native
 
     public static void PlaceBehind(IntPtr hwnd, IntPtr front)
     {
-        if (!GetWindowRect(front, out RECT rect)) return;
-        SetWindowPos(hwnd, front, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, SWP_NOACTIVATE);
+        if (front == IntPtr.Zero || !GetWindowRect(front, out RECT rect)) return;
+        SetWindowPos(hwnd, front, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
 

@@ -13,13 +13,13 @@ public sealed class Goo : FrameworkElement
     const double Tolerance = 0.02;
     const byte TintedAlpha = 0x8C;
     const double HazeOpacity = 0.14;
-    const byte GlassAlpha = 0x99;
+    const byte GlassAlpha = 0x77;
 
     static readonly Color PlainRim = Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF);
     static readonly double[] HazeReach = [2, 3, 4];
     static readonly (double At, double Level)[] FlashFrames = [(0, 0), (0.04, 1), (0.13, 0.3), (0.19, 0.9), (0.5, 0), (1, 0)];
 
-    readonly SolidColorBrush _rim = new(PlainRim), _fill = new(Colors.Black);
+    readonly SolidColorBrush _rim = new(PlainRim), _fill = new(Color.FromArgb(Settings.Glass ? GlassAlpha : byte.MaxValue, 0, 0, 0));
     readonly Light _flash = new();
     readonly Pen _edge;
 
@@ -40,7 +40,15 @@ public sealed class Goo : FrameworkElement
 
     public void Thin(bool glass, Duration time, Action thinned)
     {
-        var fade = new ColorAnimation(Color.FromArgb(glass ? GlassAlpha : byte.MaxValue, 0, 0, 0), time);
+        Color target = Color.FromArgb(glass ? GlassAlpha : byte.MaxValue, 0, 0, 0);
+        if (time.TimeSpan == TimeSpan.Zero)
+        {
+            _fill.BeginAnimation(SolidColorBrush.ColorProperty, null);
+            _fill.Color = target;
+            thinned();
+            return;
+        }
+        var fade = new ColorAnimation(target, time);
         fade.Completed += (_, _) => thinned();
         _fill.BeginAnimation(SolidColorBrush.ColorProperty, fade);
     }

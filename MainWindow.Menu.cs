@@ -9,7 +9,7 @@ namespace DynamicIsland;
 
 public partial class MainWindow
 {
-    const double LookHeight = 568, LookTilesHeight = 72;
+    const double LookHeight = 644, LookBaseHeight = 604, LookAuraRowHeight = 40, LookTilesHeight = 72;
     const int LargestScale = 130, ScaleStep = 5;
     const int LargestGap = 24, GapStep = 2;
 
@@ -25,7 +25,11 @@ public partial class MainWindow
 
     void LyricsSourceBack_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Settings);
 
-    void LookRow_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Look);
+    void LookRow_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshLookPage();
+        ShowPanel(Panel.Look);
+    }
 
     void SettingsBack_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Menu);
 
@@ -90,6 +94,29 @@ public partial class MainWindow
         UpdateSwitches(true);
     }
 
+    void ClipboardPeek_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.ClipboardPeekEnabled = !Settings.ClipboardPeekEnabled;
+        UpdateSwitches(true);
+    }
+
+    void ReactiveAura_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.ReactiveAuraEnabled = !Settings.ReactiveAuraEnabled;
+        UpdateSwitches(true);
+        AuraIntensityRow.Visibility = Settings.ReactiveAuraEnabled ? Visibility.Visible : Visibility.Collapsed;
+        UpdateLookHeight();
+    }
+
+    void AuraIntensitySlider_Changed(object? sender, EventArgs e) => SetAuraIntensity((int)AuraIntensitySlider.Value);
+
+    void SetAuraIntensity(int percent)
+    {
+        Settings.AuraBassIntensityPercent = Math.Clamp(percent, 10, 100);
+        AuraIntensityText.Text = Settings.AuraBassIntensityPercent + "%";
+        AuraIntensitySlider.Set(Settings.AuraBassIntensityPercent, true);
+    }
+
     void UpdateSwitches(bool animate)
     {
         LyricsSwitch.Set(Settings.Lyrics, animate);
@@ -101,6 +128,8 @@ public partial class MainWindow
         RimSwitch.Set(Settings.Rim, animate);
         AppVolumeSwitch.Set(Settings.AppVolume, animate);
         NetworkSwitch.Set(Settings.Network, animate);
+        ClipboardPeekSwitch.Set(Settings.ClipboardPeekEnabled, animate);
+        ReactiveAuraSwitch.Set(Settings.ReactiveAuraEnabled, animate);
         FullscreenSwitch.Set(Settings.HideFullscreen, animate);
         AutostartSwitch.Set(Autostart.Enabled, animate);
     }
@@ -200,10 +229,16 @@ public partial class MainWindow
         chevron.RenderTransform.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(open ? 90 : 0, Ms(240)) { EasingFunction = ease });
     }
 
+    void UpdateLookHeight()
+    {
+        double baseHeight = Settings.ReactiveAuraEnabled ? LookHeight : LookBaseHeight;
+        LookView.Height = baseHeight + BackdropTiles.ActualHeight + LyricChangeTiles.ActualHeight + HoverTiles.ActualHeight;
+        if (_view == View.Look) UpdateTargets();
+    }
+
     void LookTiles_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        LookView.Height = LookHeight + BackdropTiles.ActualHeight + LyricChangeTiles.ActualHeight + HoverTiles.ActualHeight;
-        if (_view == View.Look) UpdateTargets();
+        UpdateLookHeight();
     }
 
     void Accent_Click(object sender, RoutedEventArgs e)
@@ -224,6 +259,11 @@ public partial class MainWindow
         SeekStyleSegments.Set(Settings.LineBar ? 1 : 0, LookView.IsVisible);
         SeekHoverSegments.Set((int)Settings.SeekHover, LookView.IsVisible);
         GlassSwitch.Set(Settings.Glass, LookView.IsVisible);
+        ReactiveAuraSwitch.Set(Settings.ReactiveAuraEnabled, LookView.IsVisible);
+        AuraIntensityRow.Visibility = Settings.ReactiveAuraEnabled ? Visibility.Visible : Visibility.Collapsed;
+        AuraIntensityText.Text = Settings.AuraBassIntensityPercent + "%";
+        AuraIntensitySlider.Set(Settings.AuraBassIntensityPercent, LookView.IsVisible);
+        UpdateLookHeight();
         ((RadioButton)BackdropStrip.Children[(int)Settings.Backdrop]).IsChecked = true;
         ((RadioButton)LyricChangeStrip.Children[(int)Settings.LyricChange]).IsChecked = true;
         ((RadioButton)HoverStrip.Children[(int)Settings.Hover]).IsChecked = true;

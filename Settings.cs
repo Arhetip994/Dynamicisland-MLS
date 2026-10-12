@@ -57,6 +57,9 @@ static class Settings
     static List<string> _lyricsProvidersOrder = ReadProviders();
     static bool _smoothLyricsTransition = ReadSwitch(nameof(SmoothLyricsTransition), true);
     static bool _smoothLyricsFadeIn = ReadSwitch(nameof(SmoothLyricsFadeIn), true);
+    static bool _reactiveAuraEnabled = ReadSwitch(nameof(ReactiveAuraEnabled), true);
+    static int _auraBassIntensityPercent = Math.Clamp(Read(nameof(AuraBassIntensity), 35), 0, 100);
+    static bool _clipboardPeekEnabled = ReadSwitch(nameof(ClipboardPeekEnabled), true);
 
     public static List<string> LyricsProvidersOrder
     {
@@ -80,11 +83,38 @@ static class Settings
         set => Write(nameof(SmoothLyricsFadeIn), _smoothLyricsFadeIn = value);
     }
 
+    public static bool ReactiveAuraEnabled
+    {
+        get => _reactiveAuraEnabled;
+        set => Write(nameof(ReactiveAuraEnabled), _reactiveAuraEnabled = value);
+    }
+
+    public static double AuraBassIntensity
+    {
+        get => _auraBassIntensityPercent / 100.0;
+        set => Write(nameof(AuraBassIntensity), _auraBassIntensityPercent = Math.Clamp((int)Math.Round(value * 100), 0, 100));
+    }
+
+    public static int AuraBassIntensityPercent
+    {
+        get => _auraBassIntensityPercent;
+        set => Write(nameof(AuraBassIntensity), _auraBassIntensityPercent = Math.Clamp(value, 0, 100));
+    }
+
+    public static bool ClipboardPeekEnabled
+    {
+        get => _clipboardPeekEnabled;
+        set => Write(nameof(ClipboardPeekEnabled), _clipboardPeekEnabled = value);
+    }
+
     public static void Save()
     {
         Write(nameof(LyricsProvidersOrder), _lyricsProvidersOrder.ToArray(), RegistryValueKind.MultiString);
         Write(nameof(SmoothLyricsTransition), _smoothLyricsTransition);
         Write(nameof(SmoothLyricsFadeIn), _smoothLyricsFadeIn);
+        Write(nameof(ReactiveAuraEnabled), _reactiveAuraEnabled);
+        Write(nameof(AuraBassIntensity), _auraBassIntensityPercent);
+        Write(nameof(ClipboardPeekEnabled), _clipboardPeekEnabled);
     }
 
     public static class Current
@@ -105,6 +135,30 @@ static class Settings
         {
             get => Settings.SmoothLyricsFadeIn;
             set => Settings.SmoothLyricsFadeIn = value;
+        }
+
+        public static bool ReactiveAuraEnabled
+        {
+            get => Settings.ReactiveAuraEnabled;
+            set => Settings.ReactiveAuraEnabled = value;
+        }
+
+        public static double AuraBassIntensity
+        {
+            get => Settings.AuraBassIntensity;
+            set => Settings.AuraBassIntensity = value;
+        }
+
+        public static int AuraBassIntensityPercent
+        {
+            get => Settings.AuraBassIntensityPercent;
+            set => Settings.AuraBassIntensityPercent = value;
+        }
+
+        public static bool ClipboardPeekEnabled
+        {
+            get => Settings.ClipboardPeekEnabled;
+            set => Settings.ClipboardPeekEnabled = value;
         }
 
         public static void Save() => Settings.Save();

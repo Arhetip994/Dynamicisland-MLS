@@ -8,7 +8,7 @@ public enum Glyph
 {
     Mute, Quiet, Mid, Loud, Headphones, Speaker, Vpn, Offline, Wifi, Wired, Bell, Note, Battery, Minus, Plus, Chevron, Back,
     Clock, Gear, Lines, Sparkle, Rim, Expand, Windows, Power, Look, Size, Gap, Drop, Moon, Tray, Cross, Bolt, VpnOff, Bars, Update,
-    Segments, Stars, Pointer, Record, Folder, Bulge,
+    Segments, Stars, Pointer, Record, Folder, Bulge, Clipboard, Link, Image,
 }
 
 public sealed class Icon : FrameworkElement
@@ -117,6 +117,9 @@ public sealed class Icon : FrameworkElement
         [Glyph.Record] = new("M12,8.2 A3.8,3.8 0 1 0 12,15.8 A3.8,3.8 0 1 0 12,8.2 Z", "M12,3.9 A8.1,8.1 0 1 0 12,20.1 A8.1,8.1 0 1 0 12,3.9 Z", 2.2),
         [Glyph.Folder] = new("M3.6,6.6 A1.6,1.6 0 0 1 5.2,5 H9.4 L11.4,7 H18.8 A1.6,1.6 0 0 1 20.4,8.6 V17.4 A1.6,1.6 0 0 1 18.8,19 H5.2"
             + " A1.6,1.6 0 0 1 3.6,17.4 Z"),
+        [Glyph.Clipboard] = new("M7,4 H9 V2.5 A1,1 0 0 1 10,1.5 H14 A1,1 0 0 1 15,2.5 V4 H17 A2,2 0 0 1 19,6 V20 A2,2 0 0 1 17,22 H7 A2,2 0 0 1 5,20 V6 A2,2 0 0 1 7,4 Z", Cut: "M8.5,9.5 H15.5 M8.5,13.5 H15.5 M8.5,17.5 H13", Gap: 1.8),
+        [Glyph.Link] = new(Lines: "M10,13 A3,3 0 0 0 14,9 L16.5,6.5 A3,3 0 0 0 12.2,2.2 L9.7,4.7 A3,3 0 0 0 9.7,8.5 M14,11 A3,3 0 0 0 10,15 L7.5,17.5 A3,3 0 0 0 11.8,21.8 L14.3,19.3 A3,3 0 0 0 14.3,15.5", Line: 2.2),
+        [Glyph.Image] = new("M4.5,4 H19.5 A1.5,1.5 0 0 1 21,5.5 V18.5 A1.5,1.5 0 0 1 19.5,20 H4.5 A1.5,1.5 0 0 1 3,18.5 V5.5 A1.5,1.5 0 0 1 4.5,4 Z", Cut: "M8,8.5 A1.5,1.5 0 1 0 8,8.51 M4.5,17.5 L9.5,12.5 L13,16 L15.5,13.5 L19.5,17.5", Gap: 2),
     };
 
     static readonly Dictionary<Glyph, Geometry> Outlines = [];

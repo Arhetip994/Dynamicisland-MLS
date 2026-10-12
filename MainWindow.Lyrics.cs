@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
@@ -48,6 +49,8 @@ public partial class MainWindow
     double _playerScroll;
     bool _playerScrolling;
     int _playerIndex = -1;
+    int _playerHoverIndex = -1;
+    Point _lyricClickStart;
     bool _playerHasLyricRoom;
     bool _playerLyricsPending;
 
@@ -286,6 +289,7 @@ public partial class MainWindow
         PlayerLyricLines.Children.Clear();
         _playerRows = new PlayerLine[lines.Length];
         _playerScrolling = false;
+        _playerHoverIndex = -1;
 
         double width = PlayerLyricBox.Width, top = 0, size = Settings.LyricEffects ? UnsungLineScale : 1;
         for (int i = 0; i < lines.Length; i++)
@@ -370,5 +374,99 @@ public partial class MainWindow
         double longest = Lyric.IsWordless(_playerLines[index].Text) ? double.MaxValue : MaxLineFillSeconds;
         double seconds = Math.Clamp((end - start).TotalSeconds, MinLineFillSeconds, longest);
         _playerRows[index].Row.Progress = Math.Clamp((LyricTime - start).TotalSeconds / seconds, 0, 1);
+    }
+
+    void PlayerLyricBox_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        _lyricClickStart = e.GetPosition(PlayerLyricBox);
+        PlayerLyricBox.CaptureMouse();
+    }
+
+    void PlayerLyricBox_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_view != View.MediaBig || _playerLines.Length == 0) return;
+        Point at = e.GetPosition(PlayerLyricBox);
+        int hover = -1;
+        double bestDist = double.MaxValue;
+        for (int i = 0; i < _playerRows.Length; i++)
+        {
+            PlayerLine line = _playerRows[i];
+            double rowMiddle = line.Middle + LineOffsetOf(line.Row).Y;
+            double dist = Math.Abs(at.Y - rowMiddle);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                hover = i;
+            }
+        }
+        if (bestDist > 30) hover = -1;
+        SetPlayerLyricHover(hover);
+    }
+
+    void PlayerLyricBox_MouseLeave(object sender, MouseEventArgs e)
+    {
+        SetPlayerLyricHover(-1);
+    }
+
+    void SetPlayerLyricHover(int hover)
+    {
+        if (hover == _playerHoverIndex) return;
+        int was = _playerHoverIndex;
+        _playerHoverIndex = hover;
+
+        if (was >= 0 && was < _playerRows.Length && was != _playerIndex)
+        {
+            Lyric row = _playerRows[was].Row;
+            row.BeginAnimation(OpacityProperty, new DoubleAnimation(UnsungLineOpacity, Ms(150)));
+        }
+        if (hover >= 0 && hover < _playerRows.Length && hover != _playerIndex)
+        {
+            Lyric row = _playerRows[hover].Row;
+            row.BeginAnimation(OpacityProperty, new DoubleAnimation(0.8, Ms(150)));
+        }
+    }
+
+    void PlayerLyricBox_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (PlayerLyricBox.IsMouseCaptured) PlayerLyricBox.ReleaseMouseCapture();
+
+        if (_view != View.MediaBig || _playerLines.Length == 0 || !_media.Seekable || _media.Duration <= TimeSpan.Zero) return;
+
+        Point at = e.GetPosition(PlayerLyricBox);
+        if ((at - _lyricClickStart).Length > 10) return;
+
+        int bestIndex = -1;
+        double bestDistance = double.MaxValue;
+        for (int i = 0; i < _playerRows.Length; i++)
+        {
+            PlayerLine line = _playerRows[i];
+            double rowMiddle = line.Middle + LineOffsetOf(line.Row).Y;
+            double dist = Math.Abs(at.Y - rowMiddle);
+            if (dist < bestDistance)
+            {
+                bestDistance = dist;
+                bestIndex = i;
+            }
+        }
+
+        if (bestIndex >= 0 && bestDistance <= 35)
+        {
+            SeekToLyric(bestIndex);
+        }
+    }
+
+    void SeekToLyric(int index)
+    {
+        if (index < 0 || index >= _playerLines.Length || !_media.Seekable || _media.Duration <= TimeSpan.Zero) return;
+
+        TimeSpan target = _playerLines[index].Time;
+        double fraction = Math.Clamp(target.TotalSeconds / _media.Duration.TotalSeconds, 0, 1);
+        _scrubFraction = fraction;
+        _scrubHeldUntil = _clock.Elapsed.TotalSeconds + SeekHoldSeconds;
+        PosText.Foreground = RemText.Foreground = Brushes.White;
+        _media.Seek(fraction);
+        UpdatePlayerLyrics(false);
     }
 }

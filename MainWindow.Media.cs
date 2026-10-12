@@ -27,6 +27,7 @@ public partial class MainWindow
     readonly Spring _coverLeft = new(0), _coverTop = new(0), _coverSize = new(FullCoverSize);
     readonly Spring _barsRight = new(0), _barsCenterY = new(0), _barsWidth = new(1), _barsHeight = new(1), _barsOpen = new(0);
     readonly Spring _coverScale = new(1);
+    readonly Spring _auraSpring = new(1.0, 300, 24);
     readonly Spring[] _spotSprings;
     readonly FrameLoop _eqLoop;
     ImageSource? _cover;
@@ -172,7 +173,31 @@ public partial class MainWindow
         }
 
         bool moving = Eq.Tick(bands, level, playing, now, dt);
-        moving |= Settings.Backdrop == Backdrop.Glow ? Glow.Tick(Eq, now, dt) : AdvanceBackdrop(bands, playing, now, dt);
+
+        double bassEnergy = 0;
+        if (bands != null && bands.Length >= 5)
+        {
+            double sum = 0;
+            for (int i = 0; i < 5; i++) sum += bands[i];
+            bassEnergy = Math.Clamp(sum / 5.0, 0, 1.5);
+        }
+        else if (playing && level > 0)
+        {
+            bassEnergy = Math.Clamp(level, 0, 1);
+        }
+
+        if (Settings.ReactiveAuraEnabled && playing)
+        {
+            _auraSpring.Target = 1.0 + (bassEnergy * Settings.AuraBassIntensity);
+        }
+        else
+        {
+            _auraSpring.Target = 1.0;
+        }
+        bool auraMoving = _auraSpring.Advance(dt);
+
+        moving |= Settings.Backdrop == Backdrop.Glow ? Glow.Tick(Eq, now, dt, _auraSpring.Value) : AdvanceBackdrop(bands, playing, now, dt);
+        moving |= auraMoving;
         return IsEqVisible && (playing || moving);
     }
 

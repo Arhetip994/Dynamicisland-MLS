@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 
 namespace DynamicIsland;
 
@@ -12,6 +13,7 @@ public sealed class Aura : FrameworkElement
     const double BaseOpacity = 0.16, OpacityGain = 0.5;
     const double BaseWidth = 0.26, WidthGain = 0.1;
     const double BaseHeight = 0.3, HeightGain = 0.4;
+    const double BaseBlurRadius = 16;
 
     readonly record struct Patch(double Center, double DriftSpeed, double DriftPhase, int PaletteIndex);
 
@@ -27,10 +29,13 @@ public sealed class Aura : FrameworkElement
 
     readonly RadialGradientBrush[] _brushes = new RadialGradientBrush[Patches.Length];
     readonly double[] _levels = new double[Patches.Length];
+    readonly BlurEffect _blur = new() { Radius = BaseBlurRadius, RenderingBias = RenderingBias.Performance };
     double _time;
+    double _bassScale = 1.0;
 
     public Aura()
     {
+        Effect = _blur;
         for (int p = 0; p < _brushes.Length; p++)
         {
             _brushes[p] = new RadialGradientBrush { Opacity = BaseOpacity };
@@ -50,10 +55,15 @@ public sealed class Aura : FrameworkElement
         }
     }
 
-    public bool Tick(Equalizer source, double t, double dt)
+    public bool Tick(Equalizer source, double t, double dt, double bassScale = 1.0)
     {
         double rise = 1 - Math.Exp(-dt / AttackSeconds), fall = 1 - Math.Exp(-dt / ReleaseSeconds);
         bool moved = false;
+
+        double targetBass = Math.Max(0.5, bassScale);
+        if (Math.Abs(_bassScale - targetBass) > StillBelow) moved = true;
+        _bassScale = targetBass;
+        _blur.Radius = Math.Clamp(BaseBlurRadius * _bassScale, 4, 64);
 
         for (int p = 0; p < _levels.Length; p++)
         {
@@ -65,7 +75,7 @@ public sealed class Aura : FrameworkElement
             double next = _levels[p] + (target - _levels[p]) * (target > _levels[p] ? rise : fall);
             if (Math.Abs(next - _levels[p]) > StillBelow) moved = true;
             _levels[p] = next;
-            _brushes[p].Opacity = BaseOpacity + OpacityGain * next;
+            _brushes[p].Opacity = Math.Clamp((BaseOpacity + OpacityGain * next) * _bassScale, 0.0, 1.0);
         }
 
         _time = t;
@@ -83,7 +93,7 @@ public sealed class Aura : FrameworkElement
             Patch patch = Patches[p];
             double level = _levels[p];
             double x = w * (patch.Center + DriftRange * Math.Sin(_time * patch.DriftSpeed + patch.DriftPhase));
-            dc.DrawEllipse(_brushes[p], null, new Point(x, h), w * (BaseWidth + WidthGain * level), h * (BaseHeight + HeightGain * level));
+            dc.DrawEllipse(_brushes[p], null, new Point(x, h), w * (BaseWidth + WidthGain * level) * _bassScale, h * (BaseHeight + HeightGain * level) * _bassScale);
         }
     }
 }

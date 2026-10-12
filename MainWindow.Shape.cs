@@ -23,6 +23,7 @@ public partial class MainWindow
     const double CacheScaleTolerance = 0.001;
     const double ShadowReach = 100;
     static readonly TimeSpan GlassTime = TimeSpan.FromMilliseconds(300);
+    static bool _loggedCutGlass;
 
     readonly Spring _width = new(34), _height = new(34), _radius = new(17);
     readonly Spring _scale = new(1, 320, 20), _offsetY = new(0, 260, 26), _leanX = new(0);
@@ -159,9 +160,36 @@ public partial class MainWindow
 
     void CutGlass(double dpi)
     {
-        if (!_glass.IsOn || Body.TransformToAncestor(this) is not Transform place) return;
-        Matrix toPixels = place.Value;
+        if (!_glass.IsOn) return;
+        GeneralTransform transform;
+        try
+        {
+            transform = Body.TransformToAncestor(this);
+        }
+        catch
+        {
+            return;
+        }
+        if (transform == null) return;
+
+        Matrix toPixels;
+        if (transform is Transform t)
+        {
+            toPixels = t.Value;
+        }
+        else
+        {
+            Point p0 = transform.Transform(new Point(0, 0));
+            Point px = transform.Transform(new Point(1, 0));
+            Point py = transform.Transform(new Point(0, 1));
+            toPixels = new Matrix(px.X - p0.X, px.Y - p0.Y, py.X - p0.X, py.Y - p0.Y, p0.X, p0.Y);
+        }
         toPixels.Scale(dpi, dpi);
+        if (!_loggedCutGlass)
+        {
+            _loggedCutGlass = true;
+            App.Log($"CutGlass executed: Pill Box={Body.PillInside.Box}, Radius={Body.PillInside.Radius}, dpi={dpi}");
+        }
         _glass.Cut(Body.PillInside, Body.BubbleInside, toPixels);
     }
 
@@ -186,6 +214,7 @@ public partial class MainWindow
     {
         _clipRect = Rect.Empty;
         ApplyShape();
+        _glass.Place();
     }
 
     void ApplyMotionBlur()

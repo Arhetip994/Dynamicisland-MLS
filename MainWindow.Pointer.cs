@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace DynamicIsland;
 
@@ -19,6 +20,14 @@ public partial class MainWindow
     const double PointerRestSeconds = 0.09;
     const double PointerSampleSeconds = 0.004;
     const float WheelVolumeStep = 0.02f;
+    const double LeanSeekInitialDelay = 3.0;
+    const double LeanSeekRepeatInterval = 0.75;
+    const double LeanSeekStepSeconds = 10.0;
+
+    readonly DispatcherTimer _leanSeekTimer = new();
+    bool _leanSeekTimerBound;
+    int _leanSeekWay;
+    bool _leanSeekTriggered;
 
     Grab _grab;
     Point _grabStart, _pointerLast;
@@ -49,6 +58,8 @@ public partial class MainWindow
             _grabStart = _pointerLast = e.GetPosition(this);
             _pointerAt = _clock.Elapsed.TotalSeconds;
             _pointerSpeed = default;
+            StopLeanSeek();
+            _leanSeekTriggered = false;
         }
         UpdateTargets();
     }
@@ -73,7 +84,11 @@ public partial class MainWindow
             if (_grab == Grab.Pull) _morphing = true;
         }
         if (_grab == Grab.Pull) _pull = Math.Max(moved.Y, 0);
-        else _leanDrag = moved.X;
+        else
+        {
+            _leanDrag = moved.X;
+            UpdateLeanSeek();
+        }
         UpdateTargets();
     }
 
@@ -85,12 +100,14 @@ public partial class MainWindow
         Grab grab = _grab;
         double pulled = _pull, leant = _leanDrag;
         Vector pace = _clock.Elapsed.TotalSeconds - _pointerAt < PointerRestSeconds ? _pointerSpeed / Math.Max(_userScale.Value, MinScale) : default;
+        bool seeked = _leanSeekTriggered;
         ReleaseGrab();
 
         switch (grab)
         {
             case Grab.Lean:
-                SkipByLean(leant, pace.X);
+                if (!seeked) SkipByLean(leant, pace.X);
+                else _leanX.Velocity = Math.Clamp(pace.X, -MaxThrowSpeed, MaxThrowSpeed);
                 break;
             case Grab.Pull when DragDirection(pulled, pace.Y, PullToOpen) <= 0:
                 break;
@@ -103,6 +120,59 @@ public partial class MainWindow
                 break;
         }
         UpdateTargets();
+    }
+
+    void EnsureLeanSeekTimer()
+    {
+        if (_leanSeekTimerBound) return;
+        _leanSeekTimerBound = true;
+        _leanSeekTimer.Tick += OnLeanSeekTick;
+    }
+
+    void UpdateLeanSeek()
+    {
+        int way = _leanDrag < -LeanToSkip ? 1 : _leanDrag > LeanToSkip ? -1 : 0;
+        if (way == 0 || !IsMediaActive || !_media.Seekable)
+        {
+            if (_leanSeekTimer.IsEnabled) StopLeanSeek();
+            return;
+        }
+
+        if (_leanSeekWay != way || !_leanSeekTimer.IsEnabled)
+        {
+            StartLeanSeek(way);
+        }
+    }
+
+    void StartLeanSeek(int way)
+    {
+        EnsureLeanSeekTimer();
+        _leanSeekWay = way;
+        _leanSeekTimer.Stop();
+        _leanSeekTimer.Interval = TimeSpan.FromSeconds(LeanSeekInitialDelay);
+        _leanSeekTimer.Start();
+    }
+
+    void StopLeanSeek()
+    {
+        _leanSeekTimer.Stop();
+        _leanSeekWay = 0;
+    }
+
+    void OnLeanSeekTick(object? sender, EventArgs e)
+    {
+        if (_grab != Grab.Lean || Math.Abs(_leanDrag) < LeanToSkip || !IsMediaActive || !_media.Seekable)
+        {
+            StopLeanSeek();
+            return;
+        }
+
+        _leanSeekTriggered = true;
+        _leanSeekTimer.Interval = TimeSpan.FromSeconds(LeanSeekRepeatInterval);
+
+        _media.SeekOffset(TimeSpan.FromSeconds(_leanSeekWay * LeanSeekStepSeconds));
+        _leanX.Velocity += _leanSeekWay * 100;
+        StartShapeLoop();
     }
 
     void SkipByLean(double leant, double pace)
@@ -122,6 +192,11 @@ public partial class MainWindow
         {
             open();
             EndTransient();
+            return;
+        }
+        if (_view == View.ClipboardPeek)
+        {
+            OnClipboardPeekClicked();
             return;
         }
         if (_ringing || _panel != Panel.None) SelectPanel(Panel.None);
@@ -148,6 +223,8 @@ public partial class MainWindow
     void ReleaseGrab()
     {
         if (_grab == Grab.None) return;
+        StopLeanSeek();
+        _leanSeekTriggered = false;
         bool dragged = _grab != Grab.Held;
         _grab = Grab.None;
         _pull = _leanDrag = 0;
@@ -198,6 +275,7 @@ public partial class MainWindow
         else if (_view == View.TimerSet) SetMinutes(_setupMinutes + step);
         else if (_view == View.Look && SizeRow.IsMouseOver) SetScale(Settings.Scale + step * ScaleStep);
         else if (_view == View.Look && GapRow.IsMouseOver) SetGap(Settings.Gap + step * GapStep);
+        else if (_view == View.Look && AuraIntensityRow.IsMouseOver) SetAuraIntensity(Settings.AuraBassIntensityPercent + step * 5);
         else if (_view == View.Shelf && ShelfOverflow > 0) ScrollShelf(-step);
         else if (_view == View.MediaBig && Settings.AppVolume && _audio.AdjustAppVolume(_media.Source, step * WheelVolumeStep, out float level))
             ShowPlayerVolume(level, false, true);

@@ -131,6 +131,15 @@ sealed class MediaService
 
     public void Previous() => SendCommand(session => session.TrySkipPreviousAsync());
 
+    public void SeekOffset(TimeSpan offset)
+    {
+        if (!Seekable || _duration <= TimeSpan.Zero) return;
+        TimeSpan target = Position + offset;
+        if (target < TimeSpan.Zero) target = TimeSpan.Zero;
+        if (target > _duration) target = _duration;
+        Seek(target.TotalSeconds / _duration.TotalSeconds);
+    }
+
     public async void Seek(double fraction)
     {
         Session? session = _session;
