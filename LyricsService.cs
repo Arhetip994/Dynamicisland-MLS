@@ -28,14 +28,14 @@ sealed class LyricsService
 
     static readonly Line[] None = [];
     static readonly HttpClient Http = CreateClient();
-    const string Rework = @"remix|rmx|sped\s*up|speed\s*up|slowed|reverb|nightcore|hardstyle|phonk|bootleg|mashup|ремикс";
+    const string Rework = @"remix|rmx|sped\s*up|speed\s*up|slowed|reverb|nightcore|hardstyle|phonk|bootleg|mashup|ремикс|hoodtrap|drill|trap|edit";
 
     static readonly Regex Noise = new(
         @"\s*[\(\[][^\)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|remaster(ed)?|hd|hq|4k|mv|feat|ft|prod|edit|mix|version|cover|клип|премьера|"
         + Rework + @")\b[^\)\]]*[\)\]]",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex Reworked = new(@"\b(" + Rework + @")\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    static readonly Regex ReworkTail = new(@"\s*[-–—+]?\s*\b(" + Rework + @")\b.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static readonly Regex ReworkTail = new(@"\s*[-–—+xX]?\s*\b(" + Rework + @")\b.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex Pipes = new(@"\s*\|[^|]*\|\s*|\s+\|\s.*$", RegexOptions.Compiled);
     static readonly Regex Channel = new(@"\s*-\s*Topic$|\s*VEVO$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex Stamped = new(@"^((?:\[\d+:\d+(?:\.\d+)?\])+)(.*)$", RegexOptions.Compiled);
@@ -197,27 +197,48 @@ sealed class LyricsService
 
         try
         {
-            // 1. Search Apple Music via Paxsenix
-            string amSearchQuery = by.Length > 0 ? song + " " + by : song;
-            string amSearchUrl = $"https://api.paxsenix.org/apple-music/search?q={Uri.EscapeDataString(amSearchQuery)}";
-            string? amSearchJson = await FetchPaxsenixStringAsync(amSearchUrl, apiKey, token);
-            if (!string.IsNullOrEmpty(amSearchJson))
+            var queries = new List<string>();
+            string qFull = by.Length > 0 ? song + " " + by : song;
+            queries.Add(qFull);
+
+            string cleanSong = ReworkTail.Replace(song, "").Trim();
+            if (cleanSong.Length == 0) cleanSong = song;
+            string primaryBy = by.Split([',', '&', ';', '/'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? by;
+
+            if (cleanSong != song)
             {
-                string? trackId = ExtractAppleTrackId(amSearchJson);
-                if (!string.IsNullOrEmpty(trackId))
+                queries.Add(primaryBy.Length > 0 ? cleanSong + " " + primaryBy : cleanSong);
+                queries.Add(cleanSong);
+            }
+            if (primaryBy.Length > 0 && primaryBy != by)
+            {
+                queries.Add(song + " " + primaryBy);
+            }
+
+            foreach (string q in queries.Distinct())
+            {
+                if (token.IsCancellationRequested) break;
+                string amSearchUrl = $"https://api.paxsenix.org/apple-music/search?q={Uri.EscapeDataString(q)}";
+                string? amSearchJson = await FetchPaxsenixStringAsync(amSearchUrl, apiKey, token);
+                if (!string.IsNullOrEmpty(amSearchJson))
                 {
-                    string amLyricsUrl = $"https://api.paxsenix.org/lyrics/applemusic?id={Uri.EscapeDataString(trackId)}";
-                    Candidate[]? c = await FetchPaxsenixUrlAsync(amLyricsUrl, apiKey, token);
-                    if (c != null && c.Length > 0) return c;
+                    List<string> trackIds = ExtractAppleTrackIds(amSearchJson);
+                    foreach (string trackId in trackIds.Take(4))
+                    {
+                        if (token.IsCancellationRequested) break;
+                        string amLyricsUrl = $"https://api.paxsenix.org/lyrics/applemusic?id={Uri.EscapeDataString(trackId)}";
+                        Candidate[]? c = await FetchPaxsenixUrlAsync(amLyricsUrl, apiKey, token);
+                        if (c != null && c.Length > 0) return c;
+                    }
                 }
             }
 
-            // 2. Direct Paxsenix source parameter "apple"
-            string directUrl = $"https://api.paxsenix.org/lyrics?source=apple&t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}";
+            // Direct Paxsenix source parameter "apple"
+            string directUrl = $"https://api.paxsenix.org/lyrics?source=apple&t={Uri.EscapeDataString(cleanSong)}&a={Uri.EscapeDataString(primaryBy)}";
             Candidate[]? direct = await FetchPaxsenixUrlAsync(directUrl, apiKey, token);
             if (direct != null && direct.Length > 0) return direct;
 
-            string directUrl2 = $"https://api.paxsenix.org/lyrics/apple?t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}";
+            string directUrl2 = $"https://api.paxsenix.org/lyrics/apple?t={Uri.EscapeDataString(cleanSong)}&a={Uri.EscapeDataString(primaryBy)}";
             Candidate[]? direct2 = await FetchPaxsenixUrlAsync(directUrl2, apiKey, token);
             if (direct2 != null && direct2.Length > 0) return direct2;
         }
@@ -234,29 +255,43 @@ sealed class LyricsService
         try
         {
             int durSec = duration > 0 ? (int)Math.Round(duration) : 180;
+            string cleanSong = ReworkTail.Replace(song, "").Trim();
+            if (cleanSong.Length == 0) cleanSong = song;
+            string primaryBy = by.Split([',', '&', ';', '/'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? by;
 
-            // 1. Musixmatch endpoint via Paxsenix with t, a and required d (duration in seconds)
-            string mmUrl = $"https://api.paxsenix.org/lyrics/musixmatch?t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}&d={durSec}";
-            Candidate[]? c = await FetchPaxsenixUrlAsync(mmUrl, apiKey, token);
-            if (c != null && c.Length > 0) return c;
-
-            // 2. High-precision fallback via Paxsenix LRC search (lrcget)
-            string q = by.Length > 0 ? song + " " + by : song;
-            string lrcgetUrl = $"https://api.paxsenix.org/lyrics/lrcget?q={Uri.EscapeDataString(q)}";
-            Candidate[]? cLrc = await FetchPaxsenixUrlAsync(lrcgetUrl, apiKey, token);
-            if (cLrc != null && cLrc.Length > 0) return cLrc;
-
-            // 3. Search Musixmatch track ID and fetch lyrics
-            string mmSearchUrl = $"https://api.paxsenix.org/musixmatch/search?q={Uri.EscapeDataString(q)}";
-            string? searchJson = await FetchPaxsenixStringAsync(mmSearchUrl, apiKey, token);
-            if (!string.IsNullOrEmpty(searchJson))
+            var variations = new List<(string S, string A)>
             {
-                string? trackId = ExtractMusixmatchTrackId(searchJson);
-                if (!string.IsNullOrEmpty(trackId))
+                (cleanSong, primaryBy),
+                (song, by)
+            };
+
+            foreach (var (s, a) in variations.Distinct())
+            {
+                if (token.IsCancellationRequested) break;
+
+                // 1. Musixmatch endpoint via Paxsenix with t, a and required d (duration in seconds)
+                string mmUrl = $"https://api.paxsenix.org/lyrics/musixmatch?t={Uri.EscapeDataString(s)}&a={Uri.EscapeDataString(a)}&d={durSec}";
+                Candidate[]? c = await FetchPaxsenixUrlAsync(mmUrl, apiKey, token);
+                if (c != null && c.Length > 0) return c;
+
+                // 2. High-precision fallback via Paxsenix LRC search (lrcget)
+                string q = a.Length > 0 ? s + " " + a : s;
+                string lrcgetUrl = $"https://api.paxsenix.org/lyrics/lrcget?q={Uri.EscapeDataString(q)}";
+                Candidate[]? cLrc = await FetchPaxsenixUrlAsync(lrcgetUrl, apiKey, token);
+                if (cLrc != null && cLrc.Length > 0) return cLrc;
+
+                // 3. Search Musixmatch track ID and fetch lyrics
+                string mmSearchUrl = $"https://api.paxsenix.org/musixmatch/search?q={Uri.EscapeDataString(q)}";
+                string? searchJson = await FetchPaxsenixStringAsync(mmSearchUrl, apiKey, token);
+                if (!string.IsNullOrEmpty(searchJson))
                 {
-                    string mmLyricsUrl = $"https://api.paxsenix.org/musixmatch/tracks/{Uri.EscapeDataString(trackId)}/lyrics";
-                    Candidate[]? c2 = await FetchPaxsenixUrlAsync(mmLyricsUrl, apiKey, token);
-                    if (c2 != null && c2.Length > 0) return c2;
+                    string? trackId = ExtractMusixmatchTrackId(searchJson);
+                    if (!string.IsNullOrEmpty(trackId))
+                    {
+                        string mmLyricsUrl = $"https://api.paxsenix.org/musixmatch/tracks/{Uri.EscapeDataString(trackId)}/lyrics";
+                        Candidate[]? c2 = await FetchPaxsenixUrlAsync(mmLyricsUrl, apiKey, token);
+                        if (c2 != null && c2.Length > 0) return c2;
+                    }
                 }
             }
         }
@@ -350,46 +385,61 @@ sealed class LyricsService
         }
     }
 
-    static string? ExtractAppleTrackId(string json)
+    static List<string> ExtractAppleTrackIds(string json)
     {
+        var ids = new List<string>();
         try
         {
             using JsonDocument doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Array)
+            JsonElement? list = null;
+            if (root.ValueKind == JsonValueKind.Array) list = root;
+            else if (root.TryGetProperty("results", out JsonElement res))
             {
-                foreach (JsonElement item in root.EnumerateArray())
-                {
-                    if (item.TryGetProperty("id", out JsonElement idEl)) return idEl.GetString() ?? idEl.GetRawText().Trim('"');
-                    if (item.TryGetProperty("playParams", out JsonElement pp) && pp.TryGetProperty("id", out JsonElement pid))
-                        return pid.GetString() ?? pid.GetRawText().Trim('"');
-                }
+                if (res.ValueKind == JsonValueKind.Array) list = res;
+                else if (res.TryGetProperty("songs", out JsonElement songs) && songs.TryGetProperty("data", out JsonElement sd) && sd.ValueKind == JsonValueKind.Array) list = sd;
             }
-            if (root.TryGetProperty("results", out JsonElement res))
+            else if (root.TryGetProperty("data", out JsonElement d) && d.ValueKind == JsonValueKind.Array) list = d;
+
+            if (list.HasValue)
             {
-                if (res.TryGetProperty("songs", out JsonElement songs) && songs.TryGetProperty("data", out JsonElement sData) && sData.ValueKind == JsonValueKind.Array)
+                // First pass: add tracks that explicitly advertise hasTimeSyncedLyrics
+                foreach (JsonElement item in list.Value.EnumerateArray())
                 {
-                    foreach (JsonElement item in sData.EnumerateArray())
-                        if (item.TryGetProperty("id", out JsonElement idEl)) return idEl.GetString() ?? idEl.GetRawText().Trim('"');
-                }
-                if (res.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (JsonElement item in res.EnumerateArray())
+                    bool hasSync = item.TryGetProperty("hasTimeSyncedLyrics", out JsonElement syncEl) && syncEl.ValueKind == JsonValueKind.True;
+                    if (hasSync && TryGetTrackId(item, out string? id) && !string.IsNullOrEmpty(id) && !ids.Contains(id))
                     {
-                        if (item.TryGetProperty("playParams", out JsonElement pp) && pp.TryGetProperty("id", out JsonElement pid))
-                            return pid.GetString() ?? pid.GetRawText().Trim('"');
-                        if (item.TryGetProperty("id", out JsonElement idEl)) return idEl.GetString() ?? idEl.GetRawText().Trim('"');
+                        ids.Add(id);
+                    }
+                }
+                // Second pass: add all other candidate tracks
+                foreach (JsonElement item in list.Value.EnumerateArray())
+                {
+                    if (TryGetTrackId(item, out string? id) && !string.IsNullOrEmpty(id) && !ids.Contains(id))
+                    {
+                        ids.Add(id);
                     }
                 }
             }
-            if (root.TryGetProperty("data", out JsonElement data) && data.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement item in data.EnumerateArray())
-                    if (item.TryGetProperty("id", out JsonElement idEl)) return idEl.GetString() ?? idEl.GetRawText().Trim('"');
-            }
         }
         catch { }
-        return null;
+        return ids;
+    }
+
+    static bool TryGetTrackId(JsonElement item, out string? id)
+    {
+        if (item.TryGetProperty("playParams", out JsonElement pp) && pp.TryGetProperty("id", out JsonElement pid))
+        {
+            id = pid.GetString() ?? pid.GetRawText().Trim('"');
+            return true;
+        }
+        if (item.TryGetProperty("id", out JsonElement idEl))
+        {
+            id = idEl.GetString() ?? idEl.GetRawText().Trim('"');
+            return true;
+        }
+        id = null;
+        return false;
     }
 
     static string? ExtractLrc(string content)
@@ -557,7 +607,15 @@ sealed class LyricsService
         string by = Channel.Replace(artist, "").Trim();
         if (song.Length == 0) song = title;
 
+        string cleanSong = ReworkTail.Replace(song, "").Trim();
+        string primaryBy = by.Split([',', '&', ';', '/'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? by;
+
         if (by.Length > 0) yield return $"track_name={Uri.EscapeDataString(song)}&artist_name={Uri.EscapeDataString(by)}";
+        if (cleanSong.Length > 0 && cleanSong != song)
+        {
+            if (primaryBy.Length > 0) yield return $"track_name={Uri.EscapeDataString(cleanSong)}&artist_name={Uri.EscapeDataString(primaryBy)}";
+            yield return "q=" + Uri.EscapeDataString(cleanSong + (primaryBy.Length > 0 ? " " + primaryBy : ""));
+        }
 
         int dash = song.IndexOf(TitleSeparator, StringComparison.Ordinal);
         if (dash > 0)
