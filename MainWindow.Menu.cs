@@ -132,6 +132,124 @@ public partial class MainWindow
         ReactiveAuraSwitch.Set(Settings.ReactiveAuraEnabled, animate);
         FullscreenSwitch.Set(Settings.HideFullscreen, animate);
         AutostartSwitch.Set(Autostart.Enabled, animate);
+        AllMonitorsSwitch.Set(Settings.AllMonitors, animate);
+        MonitorsMenuSummary.Text = Settings.AllMonitors ? "Все" : Monitors.Find(Settings.SelectedMonitor).Title;
+    }
+
+    void MonitorsRow_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshMonitorsPage();
+        ShowPanel(Panel.Monitors);
+    }
+
+    void MonitorsBack_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Settings);
+
+    void AllMonitors_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.AllMonitors = !Settings.AllMonitors;
+        UpdateSwitches(true);
+        if (!_isSecondary)
+        {
+            SyncSecondaryWindows();
+        }
+        else if (_primaryWindow != null)
+        {
+            _primaryWindow.SyncSecondaryWindows();
+        }
+        RefreshMonitorsPage();
+    }
+
+    public void SelectMonitor(MonitorInfo target)
+    {
+        Settings.SelectedMonitor = target.DeviceName;
+        CenterOnScreen();
+        UpdateSwitches(false);
+        RefreshMonitorsPage();
+        if (!_isSecondary)
+        {
+            SyncSecondaryWindows();
+        }
+        else if (_primaryWindow != null)
+        {
+            _primaryWindow.SyncSecondaryWindows();
+        }
+    }
+
+    void RefreshMonitorsPage()
+    {
+        if (MonitorsList == null) return;
+        MonitorsList.Children.Clear();
+
+        var all = Monitors.GetAll();
+        string currentDevice = (_isSecondary && !string.IsNullOrEmpty(_assignedMonitorDevice))
+            ? _assignedMonitorDevice
+            : (string.IsNullOrEmpty(Settings.SelectedMonitor) ? Monitors.GetPrimary().DeviceName : Settings.SelectedMonitor);
+
+        foreach (MonitorInfo monitor in all)
+        {
+            bool isCurrent = string.Equals(monitor.DeviceName, currentDevice, StringComparison.OrdinalIgnoreCase);
+
+            var button = new Button { Style = (Style)FindResource("RowButton") };
+            var grid = new Grid();
+
+            var icon = new Icon
+            {
+                Style = (Style)FindResource("RowIcon"),
+                Kind = Glyph.Desktop,
+                Fill = isCurrent ? (Brush)FindResource("Green") : Brushes.White,
+            };
+
+            var label = new TextBlock
+            {
+                Style = (Style)FindResource("RowLabel"),
+                Text = monitor.Title,
+                Foreground = isCurrent ? (Brush)FindResource("Green") : Brushes.White,
+            };
+
+            var rightPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var resText = new TextBlock
+            {
+                Text = monitor.Resolution,
+                Foreground = (Brush)FindResource("Dim"),
+                FontSize = 12.5,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            rightPanel.Children.Add(resText);
+
+            if (isCurrent)
+            {
+                var check = new Icon
+                {
+                    Kind = Glyph.Check,
+                    Fill = (Brush)FindResource("Green"),
+                    Width = 16,
+                    Height = 16,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                rightPanel.Children.Add(check);
+            }
+
+            grid.Children.Add(icon);
+            grid.Children.Add(label);
+            grid.Children.Add(rightPanel);
+            button.Content = grid;
+
+            MonitorInfo captured = monitor;
+            button.Click += (_, _) => SelectMonitor(captured);
+
+            MonitorsList.Children.Add(button);
+        }
+
+        double calculatedHeight = Math.Max(220, 145 + all.Count * 40);
+        MonitorsPage.Height = calculatedHeight;
+        if (_view == View.Monitors) UpdateTargets();
     }
 
 
@@ -693,7 +811,7 @@ public partial class MainWindow
 
         RefreshLyricsProvidersList();
         UpdatePaxsenixStatus();
-        TrackLyrics();
+        TrackLyrics(true);
     }
 
     void MoveProvider(string item, int offset)
@@ -711,7 +829,7 @@ public partial class MainWindow
 
         RefreshLyricsProvidersList();
         UpdatePaxsenixStatus();
-        TrackLyrics();
+        TrackLyrics(true);
     }
 
     void ApplyPaxsenixMasking()
@@ -756,7 +874,7 @@ public partial class MainWindow
                 Settings.PaxsenixApiKey = text;
                 LyricsService.ResetAuthError();
                 UpdatePaxsenixStatus();
-                TrackLyrics();
+                TrackLyrics(true);
             }
         }
         catch (Exception ex)
@@ -801,6 +919,6 @@ public partial class MainWindow
         Settings.PaxsenixApiKey = key;
         LyricsService.ResetAuthError();
         UpdatePaxsenixStatus();
-        TrackLyrics();
+        TrackLyrics(true);
     }
 }

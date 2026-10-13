@@ -73,10 +73,10 @@ sealed class LyricsService
 
     public bool IsPending { get; private set; }
 
-    public void Track(string title, string artist)
+    public void Track(string title, string artist, double duration = 0, bool force = false)
     {
         string key = title + "\n" + artist;
-        if (key == _trackKey) return;
+        if (!force && key == _trackKey) return;
 
         _trackKey = key;
         _candidates = [];
@@ -84,7 +84,7 @@ sealed class LyricsService
         _reworked = Reworked.IsMatch(title);
         int version = ++_requestVersion;
         IsPending = title.Length > 0;
-        if (IsPending) _ = LoadAsync(title, artist, version);
+        if (IsPending) _ = LoadAsync(title, artist, duration, version);
     }
 
     public Line[] LinesFor(TimeSpan duration)
@@ -130,10 +130,10 @@ sealed class LyricsService
         return Array.ConvertAll(usual.Lines, line => new Line(line.Time * ratio, line.Text));
     }
 
-    async Task LoadAsync(string title, string artist, int version)
+    async Task LoadAsync(string title, string artist, double duration, int version)
     {
         Candidate[] found = [];
-        try { found = await Task.Run(() => FetchAsync(title, artist)); }
+        try { found = await Task.Run(() => FetchAsync(title, artist, duration)); }
         catch { }
         if (version != _requestVersion) return;
 
@@ -143,7 +143,7 @@ sealed class LyricsService
         Changed?.Invoke();
     }
 
-    static async Task<Candidate[]> FetchAsync(string title, string artist)
+    static async Task<Candidate[]> FetchAsync(string title, string artist, double duration = 0)
     {
         string apiKey = Settings.PaxsenixApiKey;
         string song = ReworkTail.Replace(Pipes.Replace(Noise.Replace(title, ""), " "), "").Replace('—', '-').Replace('–', '-').Trim();
@@ -156,7 +156,7 @@ sealed class LyricsService
 
         foreach (string provider in order)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
             Candidate[] found = [];
             try
             {
@@ -166,7 +166,7 @@ sealed class LyricsService
                 }
                 else if (string.Equals(provider, "Musixmatch", StringComparison.OrdinalIgnoreCase))
                 {
-                    found = await FetchMusixmatchAsync(song, by, apiKey, cts.Token);
+                    found = await FetchMusixmatchAsync(song, by, duration, apiKey, cts.Token);
                 }
                 else if (string.Equals(provider, "LRCLIB", StringComparison.OrdinalIgnoreCase))
                 {
@@ -227,26 +227,66 @@ sealed class LyricsService
         return [];
     }
 
-    static async Task<Candidate[]> FetchMusixmatchAsync(string song, string by, string apiKey, CancellationToken token)
+    static async Task<Candidate[]> FetchMusixmatchAsync(string song, string by, double duration, string apiKey, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(apiKey)) return [];
 
         try
         {
-            // 1. Musixmatch endpoint via Paxsenix
-            string mmUrl = $"https://api.paxsenix.org/lyrics/musixmatch?t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}";
+            int durSec = duration > 0 ? (int)Math.Round(duration) : 180;
+
+            // 1. Musixmatch endpoint via Paxsenix with t, a and required d (duration in seconds)
+            string mmUrl = $"https://api.paxsenix.org/lyrics/musixmatch?t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}&d={durSec}";
             Candidate[]? c = await FetchPaxsenixUrlAsync(mmUrl, apiKey, token);
             if (c != null && c.Length > 0) return c;
 
-            // 2. Direct Paxsenix source parameter "musixmatch"
-            string mmDirect = $"https://api.paxsenix.org/lyrics?source=musixmatch&t={Uri.EscapeDataString(song)}&a={Uri.EscapeDataString(by)}";
-            Candidate[]? c2 = await FetchPaxsenixUrlAsync(mmDirect, apiKey, token);
-            if (c2 != null && c2.Length > 0) return c2;
+            // 2. High-precision fallback via Paxsenix LRC search (lrcget)
+            string q = by.Length > 0 ? song + " " + by : song;
+            string lrcgetUrl = $"https://api.paxsenix.org/lyrics/lrcget?q={Uri.EscapeDataString(q)}";
+            Candidate[]? cLrc = await FetchPaxsenixUrlAsync(lrcgetUrl, apiKey, token);
+            if (cLrc != null && cLrc.Length > 0) return cLrc;
+
+            // 3. Search Musixmatch track ID and fetch lyrics
+            string mmSearchUrl = $"https://api.paxsenix.org/musixmatch/search?q={Uri.EscapeDataString(q)}";
+            string? searchJson = await FetchPaxsenixStringAsync(mmSearchUrl, apiKey, token);
+            if (!string.IsNullOrEmpty(searchJson))
+            {
+                string? trackId = ExtractMusixmatchTrackId(searchJson);
+                if (!string.IsNullOrEmpty(trackId))
+                {
+                    string mmLyricsUrl = $"https://api.paxsenix.org/musixmatch/tracks/{Uri.EscapeDataString(trackId)}/lyrics";
+                    Candidate[]? c2 = await FetchPaxsenixUrlAsync(mmLyricsUrl, apiKey, token);
+                    if (c2 != null && c2.Length > 0) return c2;
+                }
+            }
         }
         catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException) { }
         catch (Exception ex) { App.Log(ex); }
 
         return [];
+    }
+
+    static string? ExtractMusixmatchTrackId(string json)
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            JsonElement root = doc.RootElement;
+            if (root.TryGetProperty("data", out JsonElement data) && data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in data.EnumerateArray())
+                {
+                    if (item.TryGetProperty("commontrack_id", out JsonElement cid))
+                        return cid.GetString() ?? cid.GetRawText().Trim('"');
+                    if (item.TryGetProperty("track_id", out JsonElement tid))
+                        return tid.GetString() ?? tid.GetRawText().Trim('"');
+                    if (item.TryGetProperty("id", out JsonElement id))
+                        return id.GetString() ?? id.GetRawText().Trim('"');
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     static async Task<Candidate[]?> FetchPaxsenixUrlAsync(string url, string apiKey, CancellationToken token)
@@ -376,14 +416,39 @@ sealed class LyricsService
                         string str = el.GetString() ?? "";
                         if (Stamp.IsMatch(str)) return str;
                     }
+                    else if (el.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (JsonElement item in el.EnumerateArray())
+                        {
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                string str = item.GetString() ?? "";
+                                if (Stamp.IsMatch(str)) return str;
+                            }
+                        }
+                    }
                     else if (el.ValueKind == JsonValueKind.Object)
                     {
                         foreach (string sub in props)
                         {
-                            if (el.TryGetProperty(sub, out JsonElement subEl) && subEl.ValueKind == JsonValueKind.String)
+                            if (el.TryGetProperty(sub, out JsonElement subEl))
                             {
-                                string str = subEl.GetString() ?? "";
-                                if (Stamp.IsMatch(str)) return str;
+                                if (subEl.ValueKind == JsonValueKind.String)
+                                {
+                                    string str = subEl.GetString() ?? "";
+                                    if (Stamp.IsMatch(str)) return str;
+                                }
+                                else if (subEl.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (JsonElement item in subEl.EnumerateArray())
+                                    {
+                                        if (item.ValueKind == JsonValueKind.String)
+                                        {
+                                            string str = item.GetString() ?? "";
+                                            if (Stamp.IsMatch(str)) return str;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
