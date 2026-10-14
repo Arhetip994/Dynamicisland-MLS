@@ -33,6 +33,19 @@ enum SeekHover
     Wave,
 }
 
+[Flags]
+public enum LyricSource
+{
+    Lrclib = 1,
+    Deezer = 2,
+    NetEase = 4,
+    QqMusic = 8,
+    Kugou = 16,
+    Paxsenix = 32,
+    Usual = Lrclib | Deezer | NetEase | QqMusic | Kugou,
+    All = Usual | Paxsenix,
+}
+
 static class Settings
 {
     const string Key = @"Software\DynamicIsland";
@@ -42,11 +55,14 @@ static class Settings
     static bool _lyrics = ReadSwitch(nameof(Lyrics)), _lyricEffects = ReadSwitch(nameof(LyricEffects));
     static bool _network = ReadSwitch(nameof(Network)), _hideFullscreen = ReadSwitch(nameof(HideFullscreen));
     static bool _rim = ReadSwitch(nameof(Rim)), _appVolume = ReadSwitch(nameof(AppVolume));
+    static bool _weather = ReadSwitch(nameof(Weather));
     static bool _dots = ReadSwitch(nameof(Dots), false);
     static bool _lineBar = ReadSwitch(nameof(LineBar));
     static bool _glass = ReadSwitch(nameof(Glass), false);
     static Backdrop _backdrop = (Backdrop)Math.Clamp(Read(nameof(Backdrop), 0), 0, (int)Backdrop.MatrixAndStars);
     static LyricChange _lyricChange = (LyricChange)Math.Clamp(Read(nameof(LyricChange), (int)LyricChange.Wave), 0, (int)LyricChange.Drum);
+    static LyricSource _lyricSources = Known((LyricSource)Read(nameof(LyricSources), (int)LyricSource.Usual));
+    static LyricSource Known(LyricSource s) => (s & LyricSource.All) == 0 ? LyricSource.Usual : (s & LyricSource.All);
     static Hover _hover = (Hover)Math.Clamp(Read(nameof(Hover), 0), 0, (int)Hover.Flow);
     static SeekHover _seekHover = (SeekHover)Math.Clamp(Read(nameof(SeekHover), 0), 0, (int)SeekHover.Wave);
     static int _scale = Math.Clamp(Read(nameof(Scale), DefaultScale), MinScale, MaxScale);
@@ -201,6 +217,18 @@ static class Settings
     {
         get => _paxsenixApiKey;
         set => Write(nameof(PaxsenixApiKey), _paxsenixApiKey = value?.Trim() ?? string.Empty, RegistryValueKind.String);
+    }
+
+    public static bool Weather
+    {
+        get => _weather;
+        set => Write(nameof(Weather), _weather = value);
+    }
+
+    public static LyricSource LyricSources
+    {
+        get => _lyricSources;
+        set => Write(nameof(LyricSources), (int)(_lyricSources = value), RegistryValueKind.DWord);
     }
 
     public static bool Dots

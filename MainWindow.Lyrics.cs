@@ -61,7 +61,7 @@ public partial class MainWindow
 
     TimeSpan LyricTime => _media.Position + LyricLead;
 
-    void TrackLyrics(bool force = false) => _lyrics.Track(Settings.Lyrics && _media.HasTrack ? _media.Title : "", _media.Artist, _media.Duration.TotalSeconds, force);
+    void TrackLyrics(bool force = false) => _lyrics.Track(Settings.Lyrics && _media.HasTrack ? _media.Title : "", _media.Artist, Settings.LyricSources, _media.Duration.TotalSeconds, force);
 
     void OnLyricsChanged()
     {
