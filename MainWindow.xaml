@@ -844,7 +844,7 @@
                     </local:RowList>
                 </Grid>
 
-                <Grid x:Name="SettingsView" Width="320" Height="492" HorizontalAlignment="Center" VerticalAlignment="Top">
+                <Grid x:Name="SettingsView" Width="320" Height="532" HorizontalAlignment="Center" VerticalAlignment="Top">
                     <local:RowList Margin="10,8,10,0">
                         <Button Style="{StaticResource BackButton}" Content="НАСТРОЙКИ" Click="SettingsBack_Click"/>
                         <Button Style="{StaticResource RowButton}" Click="Lyrics_Click">
@@ -920,6 +920,16 @@
                                 <local:Toggle x:Name="FullscreenSwitch" Style="{StaticResource RowSwitch}"/>
                             </Grid>
                         </Button>
+                        <Button Style="{StaticResource RowButton}" Click="MonitorsRow_Click">
+                            <Grid>
+                                <local:Icon Style="{StaticResource RowIcon}" Kind="Desktop"/>
+                                <TextBlock Style="{StaticResource RowLabel}" Text="Мониторы"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <TextBlock x:Name="MonitorsMenuSummary" Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <local:Icon Style="{StaticResource RowChevron}" Margin="8,1,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Button>
                         <Button Style="{StaticResource RowButton}" Click="Autostart_Click">
                             <Grid>
                                 <local:Icon Style="{StaticResource RowIcon}" Kind="Windows"/>
@@ -928,6 +938,26 @@
                             </Grid>
                         </Button>
                     </local:RowList>
+                </Grid>
+
+                <Grid x:Name="MonitorsPage" Width="320" Height="360" HorizontalAlignment="Center" VerticalAlignment="Top">
+                    <StackPanel Margin="10,8,10,0" VerticalAlignment="Top">
+                        <local:RowList>
+                            <Button Style="{StaticResource BackButton}" Content="МОНИТОРЫ" Click="MonitorsBack_Click"/>
+                            <Button Style="{StaticResource RowButton}" Click="AllMonitors_Click">
+                                <Grid>
+                                    <local:Icon Style="{StaticResource RowIcon}" Kind="Desktop"/>
+                                    <TextBlock Style="{StaticResource RowLabel}" Text="Вывод на все мониторы"/>
+                                    <local:Toggle x:Name="AllMonitorsSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                        </local:RowList>
+                        <StackPanel Margin="12,10,12,6">
+                            <TextBlock Style="{StaticResource Caption}" Text="ВЫБОР МОНИТОРА"/>
+                            <TextBlock Text="Перетащите остров мышью или выберите экран из списка" FontSize="11.5" Foreground="{StaticResource Dim}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <local:RowList x:Name="MonitorsList" Margin="0,2,0,0"/>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="LyricsSourcePage" Width="320" Height="360" HorizontalAlignment="Center" VerticalAlignment="Top">

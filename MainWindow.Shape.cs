@@ -56,7 +56,7 @@ public partial class MainWindow
         if (dragging) TuneDragSprings(true);
         UpdateBubbleTargets(compact);
         _offsetY.Target = (_hiddenByFullscreen || _sentAway) && !_ringing ? -(shape.Height + OffscreenMargin + Settings.Gap * 100.0 / Settings.Scale) : 0;
-        _scale.Target = dragging ? 1 : _pressed ? (compact ? PressedScale : PressedOpenScale) : _hovered && compact ? HoverScale : 1;
+        _scale.Target = _grab == Grab.Move ? 0.96 : dragging ? 1 : _pressed ? (compact ? PressedScale : PressedOpenScale) : _hovered && compact ? HoverScale : 1;
         _bubbleScale.Target = _bubblePressed ? PressedScale : _bubbleHovered ? HoverScale : 1;
         StartShapeLoop();
     }

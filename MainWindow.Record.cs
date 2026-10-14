@@ -15,7 +15,7 @@ public partial class MainWindow
     const double Gigabyte = 1 << 30, Megabyte = 1 << 20;
     static readonly TimeSpan RecordBeat = TimeSpan.FromMilliseconds(900);
 
-    readonly ObsService _obs = new();
+    readonly ObsService _obs;
     readonly SolidColorBrush _recordTint, _recordPauseDisc = new(Colors.White.WithAlpha(PauseDiscAlpha));
     bool _recordPauseShown;
     int _shownRecordSeconds = -1;

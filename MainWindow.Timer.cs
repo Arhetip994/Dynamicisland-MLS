@@ -17,7 +17,7 @@ public partial class MainWindow
     static readonly TimeSpan RingPeriod = TimeSpan.FromSeconds(1.5);
     static readonly TimeSpan RingSwingTime = TimeSpan.FromSeconds(0.8);
 
-    readonly Countdown _countdown = new();
+    readonly Countdown _countdown;
     readonly Alarm _alarm = new();
     readonly SolidColorBrush _timerTint;
     readonly ScaleTransform _ringPulse = new(1, 1), _bigTimerPulse = new(1, 1);

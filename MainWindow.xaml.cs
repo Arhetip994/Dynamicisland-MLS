@@ -13,9 +13,9 @@ namespace DynamicIsland;
 
 public partial class MainWindow : Window
 {
-    enum View { Idle, Media, Timer, Record, Volume, Charge, Focus, Toast, Notice, MediaBig, IdleBig, TimerBig, TimerSet, RecordBig, RecordSet, Menu, Settings, Look, Shelf, LyricsSource, ClipboardPeek }
+    enum View { Idle, Media, Timer, Record, Volume, Charge, Focus, Toast, Notice, MediaBig, IdleBig, TimerBig, TimerSet, RecordBig, RecordSet, Menu, Settings, Look, Shelf, LyricsSource, ClipboardPeek, Monitors }
 
-    enum Panel { None, Player, Timer, TimerSet, Record, Menu, Settings, Look, Shelf, LyricsSource }
+    enum Panel { None, Player, Timer, TimerSet, Record, Menu, Settings, Look, Shelf, LyricsSource, Monitors }
 
     readonly record struct PillShape(double Width, double Height, double Radius);
 
@@ -37,11 +37,12 @@ public partial class MainWindow : Window
         [View.RecordBig] = new(340, 92, 40),
         [View.RecordSet] = new(320, 92, 40),
         [View.Menu] = new(300, 288, 34),
-        [View.Settings] = new(320, 492, 34),
+        [View.Settings] = new(320, 532, 34),
         [View.Look] = new(352, LookHeight, 34),
         [View.Shelf] = new(380, 136, 34),
         [View.LyricsSource] = new(320, 360, 34),
         [View.ClipboardPeek] = new(320, 36, 18),
+        [View.Monitors] = new(320, 360, 34),
     };
 
     readonly record struct MediaSpot(
@@ -58,7 +59,7 @@ public partial class MainWindow : Window
         [View.MediaBig] = new(20, 20, 64, 22, 52, 38, 26, 1),
     };
 
-    static readonly View[] MenuPages = [View.Settings, View.Look, View.TimerSet, View.TimerBig, View.RecordSet, View.RecordBig, View.Shelf, View.LyricsSource];
+    static readonly View[] MenuPages = [View.Settings, View.Look, View.TimerSet, View.TimerBig, View.RecordSet, View.RecordBig, View.Shelf, View.LyricsSource, View.Monitors];
 
     const double HostWidth = 620, HostHeight = 720;
     const double CompactMaxHeight = 40;
@@ -73,9 +74,15 @@ public partial class MainWindow : Window
 
     readonly Dictionary<View, FrameworkElement> _views;
     readonly SolidColorBrush _dim, _orange, _green, _red, _indigo;
-    readonly AudioService _audio = new();
+    readonly bool _isSecondary;
+    readonly string _assignedMonitorDevice;
+    readonly MainWindow? _primaryWindow;
+    readonly List<MainWindow> _secondaryWindows = new();
+    static readonly List<MainWindow> _activeWindows = new();
+
+    readonly AudioService _audio;
     readonly MediaService _media;
-    readonly LyricsService _lyrics = new();
+    readonly LyricsService _lyrics;
     readonly NetworkService _network;
     readonly ClipboardService _clipboard;
     ClipboardItem? _currentClipboardItem;
@@ -92,8 +99,15 @@ public partial class MainWindow : Window
     IntPtr _hwnd;
     int _ticks;
 
-    public MainWindow()
+    public MainWindow() : this(string.Empty, null) { }
+
+    public MainWindow(string monitorDevice, MainWindow? primaryWindow)
     {
+        _isSecondary = primaryWindow != null;
+        _primaryWindow = primaryWindow;
+        _assignedMonitorDevice = monitorDevice;
+        _activeWindows.Add(this);
+
         InitializeComponent();
         Width *= LargestScale / 100.0;
         Height = Height * LargestScale / 100.0 + LargestGap;
@@ -127,6 +141,7 @@ public partial class MainWindow : Window
             [View.Shelf] = ShelfView,
             [View.LyricsSource] = LyricsSourcePage,
             [View.ClipboardPeek] = ClipboardView,
+            [View.Monitors] = MonitorsPage,
         };
         _spotSprings = [_coverLeft, _coverTop, _coverSize, _barsRight, _barsCenterY, _barsWidth, _barsHeight, _barsOpen];
         _springs =
@@ -151,14 +166,33 @@ public partial class MainWindow : Window
         _overshootTimeout = new DelayedAction(ReleaseVolumeOvershoot);
         _dragLeaveTimeout = new DelayedAction(OnDragLeft);
 
-        _media = new MediaService(Dispatcher);
+        if (_isSecondary && primaryWindow != null)
+        {
+            _audio = primaryWindow._audio;
+            _media = primaryWindow._media;
+            _lyrics = primaryWindow._lyrics;
+            _network = primaryWindow._network;
+            _clipboard = primaryWindow._clipboard;
+            _shelf = primaryWindow._shelf;
+            _countdown = primaryWindow._countdown;
+            _obs = primaryWindow._obs;
+        }
+        else
+        {
+            _audio = new AudioService();
+            _media = new MediaService(Dispatcher);
+            _lyrics = new LyricsService();
+            _network = new NetworkService(Dispatcher);
+            _clipboard = new ClipboardService(Dispatcher);
+            _shelf = new Shelf(Dispatcher);
+            _countdown = new Countdown();
+            _obs = new ObsService();
+        }
+
         _media.Changed += OnMediaChanged;
         _lyrics.Changed += OnLyricsChanged;
-        _network = new NetworkService(Dispatcher);
         _network.Changed += OnNetworkChanged;
-        _clipboard = new ClipboardService(Dispatcher);
         _clipboard.Copied += OnClipboardCopied;
-        _shelf = new Shelf(Dispatcher);
         _shelf.Changed += SyncShelf;
         _shelf.PictureLoaded += OnShelfPictureLoaded;
         _obs.Changed += OnObsChanged;
@@ -209,14 +243,26 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
         Native.HideFromTaskSwitcher(_hwnd);
-        Native.AddClipboardFormatListener(_hwnd);
-        if (Native.RegisterShellHook(_hwnd)) HwndSource.FromHwnd(_hwnd).AddHook(OnShellMessage);
+        if (!_isSecondary)
+        {
+            Native.AddClipboardFormatListener(_hwnd);
+            if (Native.RegisterShellHook(_hwnd)) HwndSource.FromHwnd(_hwnd).AddHook(OnShellMessage);
+        }
     }
 
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
-        if (_hwnd != IntPtr.Zero) Native.RemoveClipboardFormatListener(_hwnd);
+        _activeWindows.Remove(this);
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        _glass.Hide();
+        _ticker.Stop();
+        if (!_isSecondary)
+        {
+            foreach (MainWindow sw in _secondaryWindows.ToArray()) sw.Close();
+            _secondaryWindows.Clear();
+            if (_hwnd != IntPtr.Zero) Native.RemoveClipboardFormatListener(_hwnd);
+        }
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
@@ -265,7 +311,7 @@ public partial class MainWindow : Window
     async void OnLoaded(object sender, RoutedEventArgs e)
     {
         CenterOnScreen();
-        SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.InvokeAsync(CenterOnScreen);
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         UpdateClock();
         UpdateSwitches(false);
         RefreshLookPage();
@@ -277,18 +323,80 @@ public partial class MainWindow : Window
         _ticker.Start();
         if (_forcedTimerSeconds > 0) StartTimer(TimeSpan.FromSeconds(_forcedTimerSeconds));
 
-        try { await _media.StartAsync(); }
-        catch (Exception ex) { App.Log(ex); }
-        try { await _network.StartAsync(); }
-        catch (Exception ex) { App.Log(ex); }
-        _obs.Start();
+        if (!_isSecondary)
+        {
+            try { await _media.StartAsync(); }
+            catch (Exception ex) { App.Log(ex); }
+            try { await _network.StartAsync(); }
+            catch (Exception ex) { App.Log(ex); }
+            _obs.Start();
+
+            SyncSecondaryWindows();
+        }
+    }
+
+    void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            CenterOnScreen();
+            if (!_isSecondary) SyncSecondaryWindows();
+        });
     }
 
     void CenterOnScreen()
     {
-        Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
-        Top = 0;
+        MonitorInfo mon = GetCurrentMonitor();
+        Monitors.PositionWindow(this, mon);
         _glass.Place();
+    }
+
+    public MonitorInfo GetCurrentMonitor()
+    {
+        if (_isSecondary && !string.IsNullOrEmpty(_assignedMonitorDevice))
+        {
+            return Monitors.Find(_assignedMonitorDevice);
+        }
+        return Monitors.Find(Settings.SelectedMonitor);
+    }
+
+    public void SyncSecondaryWindows()
+    {
+        if (_isSecondary) return;
+
+        if (!Settings.AllMonitors)
+        {
+            foreach (MainWindow sw in _secondaryWindows.ToArray())
+            {
+                sw.Close();
+            }
+            _secondaryWindows.Clear();
+            return;
+        }
+
+        MonitorInfo currentMon = GetCurrentMonitor();
+        var allMonitors = Monitors.GetAll();
+        var neededMonitors = allMonitors.Where(m => !string.Equals(m.DeviceName, currentMon.DeviceName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        for (int i = _secondaryWindows.Count - 1; i >= 0; i--)
+        {
+            MainWindow sw = _secondaryWindows[i];
+            if (!neededMonitors.Any(m => string.Equals(m.DeviceName, sw._assignedMonitorDevice, StringComparison.OrdinalIgnoreCase)))
+            {
+                sw.Close();
+                _secondaryWindows.RemoveAt(i);
+            }
+        }
+
+        foreach (MonitorInfo m in neededMonitors)
+        {
+            if (!_secondaryWindows.Any(sw => string.Equals(sw._assignedMonitorDevice, m.DeviceName, StringComparison.OrdinalIgnoreCase)))
+            {
+                var sw = new MainWindow(m.DeviceName, this);
+                _secondaryWindows.Add(sw);
+                sw.Show();
+            }
+        }
     }
 
     void PlayIntro()
@@ -344,6 +452,7 @@ public partial class MainWindow : Window
             Panel.Settings => View.Settings,
             Panel.Look => View.Look,
             Panel.LyricsSource => View.LyricsSource,
+            Panel.Monitors => View.Monitors,
             Panel.Shelf => View.Shelf,
             Panel.TimerSet => View.TimerSet,
             Panel.Record => _obs.Recording ? View.RecordBig : View.RecordSet,
@@ -411,8 +520,8 @@ public partial class MainWindow : Window
     }
 
     static int MenuDirection(View from, View to) =>
-        from == View.Menu && MenuPages.Contains(to) || (from, to) is (View.Settings, View.LyricsSource) ? 1
-        : to == View.Menu && MenuPages.Contains(from) || (from, to) is (View.LyricsSource, View.Settings) ? -1 : 0;
+        from == View.Menu && MenuPages.Contains(to) || (from, to) is (View.Settings, View.LyricsSource) or (View.Settings, View.Monitors) ? 1
+        : to == View.Menu && MenuPages.Contains(from) || (from, to) is (View.LyricsSource, View.Settings) or (View.Monitors, View.Settings) ? -1 : 0;
 
     PillShape ShapeOf(View view) => view switch
     {
@@ -420,6 +529,7 @@ public partial class MainWindow : Window
         View.MediaBig when _playerHasLyricRoom => PillShapes[view] with { Height = PlayerHeight + PlayerLyricsHeight },
         View.RecordSet => PillShapes[view] with { Width = RecordSetView.Width },
         View.Look => PillShapes[view] with { Height = LookView.Height },
+        View.Monitors => PillShapes[view] with { Height = MonitorsPage.Height },
         _ => PillShapes[view],
     };
 

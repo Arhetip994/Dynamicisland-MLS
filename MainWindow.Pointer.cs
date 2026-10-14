@@ -6,7 +6,7 @@ namespace DynamicIsland;
 
 public partial class MainWindow
 {
-    enum Grab { None, Held, Pull, Lean }
+    enum Grab { None, Held, Pull, Lean, Move }
 
     const double DragThreshold = 5;
     const double DragFollow = 0.9;
@@ -31,6 +31,8 @@ public partial class MainWindow
 
     Grab _grab;
     Point _grabStart, _pointerLast;
+    Point _cursorScreenStart;
+    double _startWindowLeft, _startWindowTop;
     double _pointerAt;
     Vector _pointerSpeed;
     double _pull, _leanDrag;
@@ -52,9 +54,13 @@ public partial class MainWindow
     void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _pressed = true;
-        if (_panel == Panel.None && !_ringing && Island.CaptureMouse())
+        if ((_panel == Panel.None || Native.IsCtrlDown) && !_ringing && Island.CaptureMouse())
         {
-            _grab = Grab.Held;
+            Native.GetCursorPos(out var pt);
+            _cursorScreenStart = new Point(pt.X, pt.Y);
+            _startWindowLeft = Left;
+            _startWindowTop = Top;
+            _grab = Native.IsCtrlDown ? Grab.Move : Grab.Held;
             _grabStart = _pointerLast = e.GetPosition(this);
             _pointerAt = _clock.Elapsed.TotalSeconds;
             _pointerSpeed = default;
@@ -68,6 +74,11 @@ public partial class MainWindow
     {
         if (_grab == Grab.None) return;
         Point at = e.GetPosition(this);
+        Native.GetCursorPos(out var cursorPt);
+        Point currentScreen = new(cursorPt.X, cursorPt.Y);
+        double screenDx = currentScreen.X - _cursorScreenStart.X;
+        double screenDy = currentScreen.Y - _cursorScreenStart.Y;
+
         double now = _clock.Elapsed.TotalSeconds, dt = now - _pointerAt;
         if (dt >= PointerSampleSeconds)
         {
@@ -77,6 +88,31 @@ public partial class MainWindow
         }
 
         Vector moved = (at - _grabStart) / Math.Max(_userScale.Value, MinScale);
+
+        MonitorInfo currentMon = GetCurrentMonitor();
+        bool crossedMonitor = cursorPt.X < currentMon.Bounds.Left || cursorPt.X >= currentMon.Bounds.Right
+                           || cursorPt.Y < currentMon.Bounds.Top || cursorPt.Y >= currentMon.Bounds.Bottom;
+        bool ctrlHeld = Native.IsCtrlDown;
+
+        if (_grab == Grab.Move || ((_grab is Grab.Held or Grab.Lean or Grab.Pull) && (crossedMonitor || ctrlHeld)))
+        {
+            if (_grab != Grab.Move)
+            {
+                _grab = Grab.Move;
+                StopLeanSeek();
+                _leanDrag = 0;
+                _pull = 0;
+            }
+
+            MonitorInfo curMon = Monitors.GetFromPoint(cursorPt);
+            double dpi = curMon.DpiScale > 0 ? curMon.DpiScale : 1.0;
+            Left = _startWindowLeft + screenDx / dpi;
+            Top = _startWindowTop + screenDy / dpi;
+            _glass.Place();
+            UpdateTargets();
+            return;
+        }
+
         if (_grab == Grab.Held)
         {
             if (Math.Abs(moved.X) < DragThreshold && Math.Abs(moved.Y) < DragThreshold) return;
@@ -102,6 +138,15 @@ public partial class MainWindow
         Vector pace = _clock.Elapsed.TotalSeconds - _pointerAt < PointerRestSeconds ? _pointerSpeed / Math.Max(_userScale.Value, MinScale) : default;
         bool seeked = _leanSeekTriggered;
         ReleaseGrab();
+
+        if (grab == Grab.Move)
+        {
+            Native.GetCursorPos(out var cursorPt);
+            MonitorInfo targetMon = Monitors.GetFromPoint(cursorPt);
+            SelectMonitor(targetMon);
+            UpdateTargets();
+            return;
+        }
 
         switch (grab)
         {

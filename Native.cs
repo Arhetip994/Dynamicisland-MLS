@@ -3,7 +3,7 @@ using System.Text;
 
 namespace DynamicIsland;
 
-static class Native
+public static class Native
 {
     public enum MediaKey { VolumeDown = 9, VolumeUp = 10, NextTrack = 11, PreviousTrack = 12 }
 
@@ -31,6 +31,12 @@ static class Native
     public const int WM_CLIPBOARDUPDATE = 0x031D;
     static readonly IntPtr HWND_TOPMOST = new(-1);
     static readonly int ShellMessage = (int)RegisterWindowMessage("SHELLHOOK");
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT lpPoint);
 
     [StructLayout(LayoutKind.Sequential)]
     struct RECT { public int Left, Top, Right, Bottom; }
@@ -165,9 +171,12 @@ static class Native
         if ((style & WS_MAXIMIZE) != 0 && framed) return false;
         if (!GetWindowRect(foreground, out RECT window)) return false;
 
+        IntPtr fgMon = MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
+        IntPtr selfMon = MonitorFromWindow(self, MONITOR_DEFAULTTONEAREST);
+        if (fgMon == IntPtr.Zero || fgMon != selfMon) return false;
+
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (!GetMonitorInfo(MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST), ref info)) return false;
-        if ((info.dwFlags & MONITORINFOF_PRIMARY) == 0) return false;
+        if (!GetMonitorInfo(fgMon, ref info)) return false;
 
         RECT monitor = info.rcMonitor;
         return window.Left <= monitor.Left && window.Top <= monitor.Top && window.Right >= monitor.Right && window.Bottom >= monitor.Bottom;

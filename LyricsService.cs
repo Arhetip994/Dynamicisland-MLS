@@ -89,27 +89,25 @@ sealed class LyricsService
 
     public Line[] LinesFor(TimeSpan duration)
     {
+        if (_candidates.Length == 0) return None;
+
         double seconds = duration.TotalSeconds;
-        if (seconds < MinTimeline) return None;
+        if (seconds < MinTimeline) return _candidates[0].Lines;
 
         Line[] best = None;
-        double bestGap = DurationTolerance;
+        double bestGap = double.MaxValue;
         foreach (Candidate candidate in _candidates)
         {
-            if (candidate.End > seconds + EndSlack) continue;
-            double gap = candidate.Duration <= 0 ? 0 : Math.Abs(candidate.Duration - seconds);
-            if (gap > bestGap || (gap == bestGap && best.Length > 0)) continue;
-            best = candidate.Lines;
-            bestGap = gap;
+            double candidateDur = candidate.Duration > 0 ? candidate.Duration : candidate.End;
+            double gap = Math.Abs(candidateDur - seconds);
+            if (gap < bestGap)
+            {
+                best = candidate.Lines;
+                bestGap = gap;
+            }
         }
-        if (best.Length > 0 || !_reworked) return best;
-
-        if (Math.Abs(seconds - _stretchedFor) > RestretchAfter)
-        {
-            _stretched = Stretch(seconds);
-            _stretchedFor = seconds;
-        }
-        return _stretched;
+        if (best.Length > 0) return best;
+        return _candidates[0].Lines;
     }
 
     public TimeSpan UsualLength => _reworked ? TimeSpan.Zero : TimeSpan.FromSeconds(UsualCandidate() is { } c ? (c.Duration > 0 ? c.Duration : c.End) : 0);
@@ -132,14 +130,16 @@ sealed class LyricsService
 
     async Task LoadAsync(string title, string artist, double duration, int version)
     {
+        App.Log($"[Lyrics] Track requested: '{title}' by '{artist}', duration: {duration:F1}s");
         Candidate[] found = [];
         try { found = await Task.Run(() => FetchAsync(title, artist, duration)); }
-        catch { }
+        catch (Exception ex) { App.Log(ex); }
         if (version != _requestVersion) return;
 
         _candidates = found;
         _stretchedFor = 0;
         IsPending = false;
+        App.Log($"[Lyrics] Done searching for '{title}': {found.Length} candidate(s)");
         Changed?.Invoke();
     }
 
@@ -175,12 +175,17 @@ sealed class LyricsService
 
                 if (found.Length > 0)
                 {
+                    App.Log($"[Lyrics] Found lyrics via '{provider}' ({found.Length} candidates, first has {found[0].Lines.Length} lines)");
                     return found;
+                }
+                else
+                {
+                    App.Log($"[Lyrics] Provider '{provider}' found no lyrics for '{song}'");
                 }
             }
             catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException)
             {
-                // Fallback to next provider
+                App.Log($"[Lyrics] Provider '{provider}' timed out or network error");
             }
             catch (Exception ex)
             {

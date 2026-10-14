@@ -60,6 +60,20 @@ static class Settings
     static bool _reactiveAuraEnabled = ReadSwitch(nameof(ReactiveAuraEnabled), true);
     static int _auraBassIntensityPercent = Math.Clamp(Read(nameof(AuraBassIntensity), 35), 0, 100);
     static bool _clipboardPeekEnabled = ReadSwitch(nameof(ClipboardPeekEnabled), true);
+    static string _selectedMonitor = Read(nameof(SelectedMonitor), string.Empty);
+    static bool _allMonitors = ReadSwitch(nameof(AllMonitors), false);
+
+    public static string SelectedMonitor
+    {
+        get => _selectedMonitor;
+        set => Write(nameof(SelectedMonitor), _selectedMonitor = value ?? string.Empty);
+    }
+
+    public static bool AllMonitors
+    {
+        get => _allMonitors;
+        set => Write(nameof(AllMonitors), _allMonitors = value);
+    }
 
     public static List<string> LyricsProvidersOrder
     {
@@ -307,6 +321,8 @@ static class Settings
     }
 
     static void Write(string name, bool value) => Write(name, value ? 1 : 0);
+
+    static void Write(string name, string value) => Write(name, value, RegistryValueKind.String);
 
     static void Write(string name, int value) => Write(name, value, RegistryValueKind.DWord);
 
