@@ -51,21 +51,20 @@ sealed partial class LyricsService
 
     static Task<Candidate[]> FromKugou(string title, string artist) => FromCatalogue(title, artist, SearchKugou, KugouLyric);
 
+    static Task<Candidate[]> FromPaxsenixAppleMusic(string title, string artist) => FromCatalogue(title, artist, SearchApple, PaxsenixLyric);
+
+    static async Task<Candidate[]> FromPaxsenixMusixmatch(string title, string artist)
+    {
+        string key = Settings.PaxsenixApiKey;
+        if (string.IsNullOrWhiteSpace(key)) return [];
+        return await SearchPaxsenixMusixmatch(title, artist, key);
+    }
+
     static async Task<Candidate[]> FromPaxsenix(string title, string artist)
     {
-        // 1. Search Apple Music via Paxsenix / iTunes
-        Candidate[] apple = await FromCatalogue(title, artist, SearchApple, PaxsenixLyric);
+        Candidate[] apple = await FromPaxsenixAppleMusic(title, artist);
         if (apple.Length > 0) return apple;
-
-        // 2. If Paxsenix API key is configured, also search Musixmatch and LRC via Paxsenix
-        string key = Settings.PaxsenixApiKey;
-        if (!string.IsNullOrWhiteSpace(key))
-        {
-            Candidate[] musixmatch = await SearchPaxsenixMusixmatch(title, artist, key);
-            if (musixmatch.Length > 0) return musixmatch;
-        }
-
-        return [];
+        return await FromPaxsenixMusixmatch(title, artist);
     }
 
     static async Task<Candidate[]> SearchPaxsenixMusixmatch(string title, string artist, string key)

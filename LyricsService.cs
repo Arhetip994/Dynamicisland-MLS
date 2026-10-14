@@ -61,7 +61,8 @@ sealed partial class LyricsService
 
     public void Track(string title, string artist, LyricSource sources = LyricSource.All, double duration = 0, bool force = false)
     {
-        string key = title + "\n" + artist + "\n" + sources;
+        string orderKey = string.Join(",", Settings.Current.LyricsProvidersOrder ?? []);
+        string key = title + "\n" + artist + "\n" + orderKey;
         if (!force && key == _trackKey) return;
 
         _trackKey = key;
@@ -70,7 +71,7 @@ sealed partial class LyricsService
         _reworked = Reworked.IsMatch(title);
         int version = ++_requestVersion;
         IsPending = title.Length > 0;
-        if (IsPending) _ = LoadAsync(title, artist, sources, version);
+        if (IsPending) _ = LoadAsync(title, artist, version);
     }
 
     public Line[] LinesFor(TimeSpan duration)
@@ -117,28 +118,47 @@ sealed partial class LyricsService
         return Array.ConvertAll(usual.Lines, line => new Line(line.Time * ratio, line.Text));
     }
 
+    static Func<string, string, Task<Candidate[]>>? GetSearcher(string providerName) => providerName.ToLowerInvariant() switch
+    {
+        "apple music" => FromPaxsenixAppleMusic,
+        "musixmatch" => FromPaxsenixMusixmatch,
+        "lrclib" => FromLrclib,
+        "deezer" => FromDeezer,
+        "netease" => FromNetEase,
+        "qq music" => FromQqMusic,
+        "kugou" => FromKugou,
+        "paxsenix" => FromPaxsenix,
+        _ => null
+    };
+
     // SEQUENTIAL search (NO Task.WhenAll) as requested by user.
     // Iterates in order of priority; the first provider that returns lyrics wins immediately!
-    async Task LoadAsync(string title, string artist, LyricSource sources, int version)
+    async Task LoadAsync(string title, string artist, int version)
     {
         App.Log($"[Lyrics] Track requested: '{title}' by '{artist}'");
-        var found = new Candidate[Sources.Length][];
+        var order = Settings.Current.LyricsProvidersOrder;
+        if (order == null || order.Count == 0)
+            order = Settings.DefaultProviders.ToList();
+
+        var found = new Candidate[order.Count][];
         Array.Fill(found, []);
 
-        for (int rank = 0; rank < Sources.Length; rank++)
+        for (int rank = 0; rank < order.Count; rank++)
         {
             if (version != _requestVersion) return;
-            LyricSource flag = (LyricSource)(1 << rank);
-            if (!sources.HasFlag(flag)) continue;
+            string providerName = order[rank];
 
-            string sourceName = SourceNames[rank];
             try
             {
-                found[rank] = await Task.Run(() => Sources[rank](title, artist));
+                var searcher = GetSearcher(providerName);
+                if (searcher != null)
+                {
+                    found[rank] = await Task.Run(() => searcher(title, artist));
+                }
             }
             catch (Exception ex)
             {
-                App.Log($"[Lyrics] Source '{sourceName}' error: {ex.Message}");
+                App.Log($"[Lyrics] Provider '{providerName}' error: {ex.Message}");
                 found[rank] = [];
             }
 
@@ -149,13 +169,13 @@ sealed partial class LyricsService
                 _found = found;
                 _stretchedFor = 0;
                 IsPending = false;
-                App.Log($"[Lyrics] Found {found[rank].Length} candidate(s) via '{sourceName}' (first has {found[rank][0].Lines.Length} lines)");
+                App.Log($"[Lyrics] Found {found[rank].Length} candidate(s) via '{providerName}' (first has {found[rank][0].Lines.Length} lines)");
                 Changed?.Invoke();
-                return; // SEQUENTIAL: Stop immediately on first source with lyrics! NO parallel queries!
+                return; // SEQUENTIAL: Stop immediately on first source with lyrics!
             }
             else
             {
-                App.Log($"[Lyrics] Source '{sourceName}' found no lyrics");
+                App.Log($"[Lyrics] Provider '{providerName}' found no lyrics");
             }
         }
 

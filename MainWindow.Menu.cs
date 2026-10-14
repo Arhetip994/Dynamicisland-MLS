@@ -27,7 +27,11 @@ public partial class MainWindow
 
     void UpdateBack_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Settings);
 
-    void SourcesRow_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Sources);
+    void SourcesRow_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshLyricsProvidersList();
+        ShowPanel(Panel.Sources);
+    }
 
     void SourcesBack_Click(object sender, RoutedEventArgs e) => ShowPanel(Panel.Settings);
 
@@ -37,16 +41,6 @@ public partial class MainWindow
         _ = _updater.CheckAsync();
     }
 
-    void Source_Click(object sender, RoutedEventArgs e)
-    {
-        var picked = (LyricSource)(1 << SourceRows.Children.IndexOf((UIElement)sender) - FirstSourceRow);
-        LyricSource left = Settings.LyricSources ^ picked;
-        if (left == 0) return;
-
-        Settings.LyricSources = left;
-        UpdateSwitches(true);
-        TrackLyrics(true);
-    }
 
     void LookRow_Click(object sender, RoutedEventArgs e)
     {
@@ -159,10 +153,8 @@ public partial class MainWindow
         AllMonitorsSwitch.Set(Settings.AllMonitors, animate);
         MonitorsMenuSummary.Text = Settings.AllMonitors ? "Все" : Monitors.Find(Settings.SelectedMonitor).Title;
 
-        Toggle[] sources = [LrclibSwitch, DeezerSwitch, NetEaseSwitch, QqMusicSwitch, KugouSwitch, PaxsenixSwitch];
-        string[] chosen = SourceNames.Where((_, i) => Settings.LyricSources.HasFlag((LyricSource)(1 << i))).ToArray();
-        for (int i = 0; i < sources.Length; i++) sources[i].Set(Settings.LyricSources.HasFlag((LyricSource)(1 << i)), animate);
-        SourcesText.Text = chosen.Length == sources.Length ? "Все" : chosen.Length == 1 ? chosen[0] : $"{chosen.Length} из {sources.Length}";
+        string topProvider = Settings.Current.LyricsProvidersOrder.FirstOrDefault() ?? "Apple Music";
+        SourcesText.Text = topProvider;
     }
 
     void MonitorsRow_Click(object sender, RoutedEventArgs e)
@@ -527,6 +519,7 @@ public partial class MainWindow
         }
         finally { _updatingKeyText = false; }
         ApplyPaxsenixMasking();
+        RefreshLyricsProvidersList();
         UpdatePaxsenixStatus();
     }
 
@@ -534,6 +527,9 @@ public partial class MainWindow
     {
         string key = Settings.PaxsenixApiKey;
         bool hasKey = !string.IsNullOrWhiteSpace(key);
+
+        string primary = Settings.Current.LyricsProvidersOrder.FirstOrDefault() ?? "Apple Music";
+        SourcesText.Text = primary;
 
         if (hasKey)
         {
@@ -633,6 +629,369 @@ public partial class MainWindow
         string key = (_paxsenixKeyMasked ? PaxsenixKeyPassword.Password : PaxsenixKeyText.Text).Trim();
         Settings.PaxsenixApiKey = key;
         LyricsService.ResetAuthError();
+        UpdatePaxsenixStatus();
+        TrackLyrics(true);
+    }
+
+    readonly Dictionary<string, Spring> _providerSprings = new();
+    readonly Dictionary<string, TranslateTransform> _providerTransforms = new();
+    FrameLoop? _providerLoop;
+    Point _providerDragStart;
+    string? _draggedProvider;
+    bool _isProviderDragging;
+
+    void EnsureProviderLoop()
+    {
+        _providerLoop ??= new FrameLoop(AdvanceProviderSprings);
+    }
+
+    bool AdvanceProviderSprings(double dt)
+    {
+        bool moving = false;
+        foreach (var (provider, spring) in _providerSprings)
+        {
+            if (spring.Advance(dt)) moving = true;
+            if (_providerTransforms.TryGetValue(provider, out var transform))
+            {
+                transform.Y = spring.Value;
+            }
+        }
+        return moving;
+    }
+
+    void ResetProviderSprings()
+    {
+        foreach (var spring in _providerSprings.Values)
+        {
+            spring.Target = 0;
+        }
+        _providerLoop?.Start();
+    }
+
+    void RefreshLyricsProvidersList()
+    {
+        if (LyricsProvidersList == null) return;
+        LyricsProvidersList.Children.Clear();
+        _providerSprings.Clear();
+        _providerTransforms.Clear();
+        EnsureProviderLoop();
+
+        var order = Settings.Current.LyricsProvidersOrder;
+        if (order == null || order.Count == 0)
+        {
+            order = Settings.DefaultProviders.ToList();
+            Settings.Current.LyricsProvidersOrder = order;
+        }
+
+        for (int i = 0; i < order.Count; i++)
+        {
+            string provider = order[i];
+            bool isFirst = i == 0;
+            bool isLast = i == order.Count - 1;
+
+            var spring = new Spring(0, 380, 28);
+            var transform = new TranslateTransform();
+            _providerSprings[provider] = spring;
+            _providerTransforms[provider] = transform;
+
+            var card = CreateProviderCard(provider, i, isFirst, isLast, transform);
+            LyricsProvidersList.Children.Add(card);
+        }
+    }
+
+    Border CreateProviderCard(string provider, int index, bool isFirst, bool isLast, TranslateTransform transform)
+    {
+        var card = new Border
+        {
+            Height = 38,
+            Margin = new Thickness(0, 2, 0, 2),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
+            BorderThickness = new Thickness(1),
+            RenderTransform = transform,
+            AllowDrop = true,
+            Tag = provider,
+            Cursor = Cursors.Hand,
+        };
+
+        card.MouseEnter += (_, _) =>
+        {
+            if (!_isProviderDragging)
+            {
+                card.Background = new SolidColorBrush(Color.FromArgb(42, 255, 255, 255));
+                card.BorderBrush = new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
+            }
+        };
+        card.MouseLeave += (_, _) =>
+        {
+            if (!_isProviderDragging)
+            {
+                card.Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255));
+                card.BorderBrush = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255));
+            }
+        };
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // Left drag handle (six-dots badge ⋮⋮)
+        var grip = new Grid
+        {
+            Width = 26,
+            Height = 34,
+            Background = Brushes.Transparent,
+            Cursor = Cursors.SizeAll,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var dotsPath = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M3,4 A1.2,1.2 0 1 1 3,6.4 A1.2,1.2 0 1 1 3,4 M7,4 A1.2,1.2 0 1 1 7,6.4 A1.2,1.2 0 1 1 7,4 M3,8.8 A1.2,1.2 0 1 1 3,11.2 A1.2,1.2 0 1 1 3,8.8 M7,8.8 A1.2,1.2 0 1 1 7,11.2 A1.2,1.2 0 1 1 7,8.8 M3,13.6 A1.2,1.2 0 1 1 3,16 A1.2,1.2 0 1 1 3,13.6 M7,13.6 A1.2,1.2 0 1 1 7,16 A1.2,1.2 0 1 1 7,13.6"),
+            Fill = (SolidColorBrush)FindResource("Dim"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        grip.Children.Add(dotsPath);
+        Grid.SetColumn(grip, 0);
+        grid.Children.Add(grip);
+
+        // Center info
+        var infoStack = new StackPanel
+        {
+            Margin = new Thickness(4, 0, 4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var titleText = new TextBlock
+        {
+            Text = provider,
+            FontSize = 12.5,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+        };
+        string subtitle = provider switch
+        {
+            "Apple Music" => "Paxsenix · Apple Music",
+            "Musixmatch" => "Paxsenix · Musixmatch",
+            "LRCLIB" => "LRCLIB · Прямой API",
+            "Deezer" => "Deezer · Прямой API",
+            "NetEase" => "NetEase Cloud Music",
+            "QQ Music" => "QQ Music",
+            "Kugou" => "Kugou Music",
+            _ => "Тексты песен",
+        };
+        var subText = new TextBlock
+        {
+            Text = subtitle,
+            FontSize = 10,
+            Foreground = (SolidColorBrush)FindResource("Dim"),
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+        infoStack.Children.Add(titleText);
+        infoStack.Children.Add(subText);
+        Grid.SetColumn(infoStack, 1);
+        grid.Children.Add(infoStack);
+
+        // Right compact buttons (▲ / ▼)
+        var btnStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var upBtn = new Button
+        {
+            Width = 24,
+            Height = 24,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = isFirst ? Cursors.Arrow : Cursors.Hand,
+            Opacity = isFirst ? 0.25 : 0.85,
+            IsEnabled = !isFirst,
+            Padding = new Thickness(0),
+            ToolTip = "Переместить выше",
+        };
+        var upArrow = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M3,7 L7,3 L11,7"),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        upBtn.Content = upArrow;
+        upBtn.Click += (_, e) =>
+        {
+            e.Handled = true;
+            MoveProvider(provider, -1);
+        };
+
+        var downBtn = new Button
+        {
+            Width = 24,
+            Height = 24,
+            Margin = new Thickness(2, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = isLast ? Cursors.Arrow : Cursors.Hand,
+            Opacity = isLast ? 0.25 : 0.85,
+            IsEnabled = !isLast,
+            Padding = new Thickness(0),
+            ToolTip = "Переместить ниже",
+        };
+        var downArrow = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M3,4 L7,8 L11,4"),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        downBtn.Content = downArrow;
+        downBtn.Click += (_, e) =>
+        {
+            e.Handled = true;
+            MoveProvider(provider, 1);
+        };
+
+        btnStack.Children.Add(upBtn);
+        btnStack.Children.Add(downBtn);
+        Grid.SetColumn(btnStack, 2);
+        grid.Children.Add(btnStack);
+
+        card.Child = grid;
+
+        // Drag & Drop
+        card.PreviewMouseLeftButtonDown += (s, e) =>
+        {
+            if (e.OriginalSource is DependencyObject dep && FindParent<Button>(dep) != null) return;
+            _providerDragStart = e.GetPosition(card);
+            _draggedProvider = provider;
+        };
+
+        card.PreviewMouseMove += (s, e) =>
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && _draggedProvider == provider && !_isProviderDragging)
+            {
+                Point current = e.GetPosition(card);
+                Vector diff = current - _providerDragStart;
+                if (Math.Abs(diff.Y) > 4 || Math.Abs(diff.X) > 4)
+                {
+                    _isProviderDragging = true;
+                    card.Opacity = 0.5;
+                    try
+                    {
+                        DragDrop.DoDragDrop(card, new DataObject("LyricsProvider", provider), DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        _isProviderDragging = false;
+                        _draggedProvider = null;
+                        card.Opacity = 1.0;
+                        ResetProviderSprings();
+                    }
+                }
+            }
+        };
+
+        card.DragOver += (s, e) =>
+        {
+            if (e.Data.GetData("LyricsProvider") is string src && src != provider)
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+
+                var list = Settings.LyricsProvidersOrder;
+                int srcIdx = list.IndexOf(src);
+                int targetIdx = list.IndexOf(provider);
+
+                foreach (var p in list)
+                {
+                    if (!_providerSprings.TryGetValue(p, out var spr)) continue;
+                    if (p == src)
+                    {
+                        spr.Target = 0;
+                    }
+                    else if (srcIdx < targetIdx && list.IndexOf(p) > srcIdx && list.IndexOf(p) <= targetIdx)
+                    {
+                        spr.Target = -36;
+                    }
+                    else if (srcIdx > targetIdx && list.IndexOf(p) < srcIdx && list.IndexOf(p) >= targetIdx)
+                    {
+                        spr.Target = 36;
+                    }
+                    else
+                    {
+                        spr.Target = 0;
+                    }
+                }
+                _providerLoop?.Start();
+            }
+        };
+
+        card.DragLeave += (s, e) =>
+        {
+            ResetProviderSprings();
+        };
+
+        card.Drop += (s, e) =>
+        {
+            ResetProviderSprings();
+            if (e.Data.GetData("LyricsProvider") is string src && src != provider)
+            {
+                ReorderProvider(src, provider);
+            }
+            e.Handled = true;
+        };
+
+        return card;
+    }
+
+    static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+    {
+        DependencyObject? parent = VisualTreeHelper.GetParent(child);
+        while (parent != null && parent is not T)
+            parent = VisualTreeHelper.GetParent(parent);
+        return parent as T;
+    }
+
+    void ReorderProvider(string source, string target)
+    {
+        var list = new List<string>(Settings.LyricsProvidersOrder);
+        int oldIndex = list.IndexOf(source);
+        int newIndex = list.IndexOf(target);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex == newIndex) return;
+
+        list.RemoveAt(oldIndex);
+        list.Insert(newIndex, source);
+        Settings.Current.LyricsProvidersOrder = list;
+        Settings.Current.Save();
+
+        RefreshLyricsProvidersList();
+        UpdatePaxsenixStatus();
+        TrackLyrics(true);
+    }
+
+    void MoveProvider(string item, int offset)
+    {
+        var list = new List<string>(Settings.LyricsProvidersOrder);
+        int index = list.IndexOf(item);
+        if (index < 0) return;
+        int target = index + offset;
+        if (target < 0 || target >= list.Count) return;
+
+        list.RemoveAt(index);
+        list.Insert(target, item);
+        Settings.Current.LyricsProvidersOrder = list;
+        Settings.Current.Save();
+
+        RefreshLyricsProvidersList();
         UpdatePaxsenixStatus();
         TrackLyrics(true);
     }

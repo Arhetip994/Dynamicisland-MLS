@@ -69,7 +69,7 @@ static class Settings
     static int _gap = Math.Clamp(Read(nameof(Gap), DefaultGap), 0, MaxGap);
     static int _accent = Read(nameof(Accent), 0);
     static string _paxsenixApiKey = Read(nameof(PaxsenixApiKey), string.Empty);
-    static readonly string[] DefaultProviders = ["Apple Music", "Musixmatch", "LRCLIB"];
+    public static readonly string[] DefaultProviders = ["Apple Music", "Musixmatch", "LRCLIB", "Deezer", "NetEase", "QQ Music", "Kugou"];
     static List<string> _lyricsProvidersOrder = ReadProviders();
     static bool _smoothLyricsTransition = ReadSwitch(nameof(SmoothLyricsTransition), true);
     static bool _smoothLyricsFadeIn = ReadSwitch(nameof(SmoothLyricsFadeIn), true);
@@ -366,4 +366,5 @@ static class Settings
             App.Log(ex);
         }
     }
+
 }
