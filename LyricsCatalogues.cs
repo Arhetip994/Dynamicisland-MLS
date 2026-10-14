@@ -51,7 +51,68 @@ sealed partial class LyricsService
 
     static Task<Candidate[]> FromKugou(string title, string artist) => FromCatalogue(title, artist, SearchKugou, KugouLyric);
 
-    static Task<Candidate[]> FromPaxsenix(string title, string artist) => FromCatalogue(title, artist, SearchApple, PaxsenixLyric);
+    static async Task<Candidate[]> FromPaxsenix(string title, string artist)
+    {
+        // 1. Search Apple Music via Paxsenix / iTunes
+        Candidate[] apple = await FromCatalogue(title, artist, SearchApple, PaxsenixLyric);
+        if (apple.Length > 0) return apple;
+
+        // 2. If Paxsenix API key is configured, also search Musixmatch and LRC via Paxsenix
+        string key = Settings.PaxsenixApiKey;
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            Candidate[] musixmatch = await SearchPaxsenixMusixmatch(title, artist, key);
+            if (musixmatch.Length > 0) return musixmatch;
+        }
+
+        return [];
+    }
+
+    static async Task<Candidate[]> SearchPaxsenixMusixmatch(string title, string artist, string key)
+    {
+        foreach (Guess guess in Guesses(title, artist))
+        {
+            try
+            {
+                // Musixmatch endpoint on Paxsenix requires 't', 'a', and 'd' (duration in seconds)
+                string url = $"https://api.paxsenix.org/lyrics/musixmatch?t={Uri.EscapeDataString(guess.Song)}&a={Uri.EscapeDataString(guess.By)}&d=180";
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using JsonDocument? json = await AskAsync(url, pass: key, cancel: cts.Token);
+                if (json != null)
+                {
+                    string lrc = Text(json.RootElement, "lrc");
+                    if (string.IsNullOrEmpty(lrc)) lrc = Text(json.RootElement, "lyrics");
+                    if (!string.IsNullOrEmpty(lrc))
+                    {
+                        Candidate? cand = Timed(WithoutCredits(lrc, new Hit("", guess.Song, [guess.By], 180)), 180);
+                        if (cand != null && cand.Lines.Length >= FewestLines)
+                            return [cand];
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                string lrcgetUrl = $"https://api.paxsenix.org/lyrics/lrcget?q={Uri.EscapeDataString(guess.By + " " + guess.Song)}";
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using JsonDocument? json = await AskAsync(lrcgetUrl, pass: key, cancel: cts.Token);
+                if (json != null)
+                {
+                    string lrc = Text(json.RootElement, "lrc");
+                    if (string.IsNullOrEmpty(lrc)) lrc = Text(json.RootElement, "lyrics");
+                    if (!string.IsNullOrEmpty(lrc))
+                    {
+                        Candidate? cand = Timed(WithoutCredits(lrc, new Hit("", guess.Song, [guess.By], 180)), 180);
+                        if (cand != null && cand.Lines.Length >= FewestLines)
+                            return [cand];
+                    }
+                }
+            }
+            catch { }
+        }
+        return [];
+    }
 
     static async Task<Candidate[]> FromCatalogue(string title, string artist, Func<string, Task<Hit[]>> search, Func<Hit, Task<string>> lyric)
     {
@@ -184,8 +245,36 @@ sealed partial class LyricsService
 
     static async Task<string> PaxsenixLyric(Hit hit)
     {
-        using JsonDocument? json = await AskAsync(PaxsenixLyricUrl + hit.Id);
-        return json == null ? "" : Text(json.RootElement, "lrc");
+        string key = Settings.PaxsenixApiKey;
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                using JsonDocument? apiJson = await AskAsync($"https://api.paxsenix.org/lyrics/applemusic?id={hit.Id}", pass: key, cancel: cts.Token);
+                if (apiJson != null)
+                {
+                    string lrc = Text(apiJson.RootElement, "lrc");
+                    if (string.IsNullOrEmpty(lrc)) lrc = Text(apiJson.RootElement, "lyrics");
+                    if (!string.IsNullOrEmpty(lrc)) return lrc;
+                }
+            }
+            catch { }
+        }
+
+        try
+        {
+            using JsonDocument? json = await AskAsync(PaxsenixLyricUrl + hit.Id);
+            if (json != null)
+            {
+                string lrc = Text(json.RootElement, "lrc");
+                if (string.IsNullOrEmpty(lrc)) lrc = Text(json.RootElement, "lyrics");
+                if (!string.IsNullOrEmpty(lrc)) return lrc;
+            }
+        }
+        catch { }
+
+        return "";
     }
 
     static string Decoded(string base64)

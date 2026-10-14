@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -511,5 +511,129 @@ public partial class MainWindow
 
         UpdatePage.Height = height;
         if (_view == View.Update) UpdateTargets();
+    }
+
+    bool _paxsenixKeyMasked = true;
+    bool _updatingKeyText;
+
+    void InitPaxsenixSettings()
+    {
+        string key = Settings.PaxsenixApiKey;
+        _updatingKeyText = true;
+        try
+        {
+            PaxsenixKeyText.Text = key;
+            PaxsenixKeyPassword.Password = key;
+        }
+        finally { _updatingKeyText = false; }
+        ApplyPaxsenixMasking();
+        UpdatePaxsenixStatus();
+    }
+
+    void UpdatePaxsenixStatus()
+    {
+        string key = Settings.PaxsenixApiKey;
+        bool hasKey = !string.IsNullOrWhiteSpace(key);
+
+        if (hasKey)
+        {
+            PaxsenixStatusDot.Fill = new SolidColorBrush(Color.FromRgb(52, 199, 89));
+            PaxsenixStatusText.Text = "Ключ сохранён (Apple Music + Musixmatch)";
+        }
+        else
+        {
+            PaxsenixStatusDot.Fill = (SolidColorBrush)FindResource("Dim");
+            PaxsenixStatusText.Text = "Без ключа (только открытый Apple Music)";
+        }
+    }
+
+    void ApplyPaxsenixMasking()
+    {
+        if (_paxsenixKeyMasked)
+        {
+            PaxsenixKeyPassword.Password = PaxsenixKeyText.Text;
+            PaxsenixKeyPassword.Visibility = Visibility.Visible;
+            PaxsenixKeyText.Visibility = Visibility.Collapsed;
+            PaxsenixEyeIcon.Data = Geometry.Parse("M12,4.5 C7,4.5 2.73,7.61 1,12 C2.73,16.39 7,19.5 12,19.5 C17,19.5 21.27,16.39 23,12 C21.27,7.61 17,4.5 12,4.5 Z M12,17 C9.24,17 7,14.76 7,12 C7,9.24 9.24,7 12,7 C14.76,7 17,9.24 17,12 C17,14.76 14.76,17 12,17 Z M12,9 C10.34,9 9,10.34 9,12 C9,13.66 10.34,15 12,15 C13.66,15 15,13.66 15,12 C15,10.34 13.66,9 12,9 Z");
+        }
+        else
+        {
+            PaxsenixKeyText.Text = PaxsenixKeyPassword.Password;
+            PaxsenixKeyText.Visibility = Visibility.Visible;
+            PaxsenixKeyPassword.Visibility = Visibility.Collapsed;
+            PaxsenixEyeIcon.Data = Geometry.Parse("M12,7 c2.76,0 5,2.24 5,5 0,0.65 -0.13,1.26 -0.36,1.82 l2.92,2.92 c1.51,-1.26 2.7,-2.89 3.44,-4.74 -1.73,-4.39 -6,-7.5 -11,-7.5 -1.4,0 -2.74,0.25 -3.98,0.7 l2.16,2.16 C10.74,7.13 11.35,7 12,7 z M2,4.27 l2.28,2.28 0.46,0.46 C3.08,8.3 1.78,10.02 1,12 c1.73,4.39 6,7.5 11,7.5 1.55,0 3.03,-0.3 4.38,-0.84 l0.42,0.42 L19.73,22 21,20.73 3.27,3 2,4.27 z M7.53,9.8 l1.55,1.55 c-0.05,0.21 -0.08,0.43 -0.08,0.65 0,1.66 1.34,3 3,3 0.22,0 0.44,-0.03 0.65,-0.08 l1.55,1.55 c-0.67,0.33 -1.41,0.53 -2.2,0.53 -2.76,0 -5,-2.24 -5,-5 0,-0.79 0.2,-1.53 0.53,-2.2 z M11.84,9.02 l3.15,3.15 0.02,-0.16 c0,-1.66 -1.34,-3 -3,-3 l-0.17,0.01 z");
+        }
+    }
+
+    void PaxsenixToggleVisibility_Click(object sender, RoutedEventArgs e)
+    {
+        _paxsenixKeyMasked = !_paxsenixKeyMasked;
+        ApplyPaxsenixMasking();
+    }
+
+    void PaxsenixPaste_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string text = Clipboard.GetText()?.Trim() ?? "";
+            if (!string.IsNullOrEmpty(text))
+            {
+                _updatingKeyText = true;
+                try
+                {
+                    PaxsenixKeyText.Text = text;
+                    PaxsenixKeyPassword.Password = text;
+                }
+                finally { _updatingKeyText = false; }
+
+                Settings.PaxsenixApiKey = text;
+                LyricsService.ResetAuthError();
+                UpdatePaxsenixStatus();
+                TrackLyrics(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            App.Log(ex);
+        }
+    }
+
+    void PaxsenixKey_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_updatingKeyText) return;
+        _updatingKeyText = true;
+        try
+        {
+            string key = PaxsenixKeyText.Text.Trim();
+            PaxsenixKeyPassword.Password = key;
+            Settings.PaxsenixApiKey = key;
+            LyricsService.ResetAuthError();
+            UpdatePaxsenixStatus();
+        }
+        finally { _updatingKeyText = false; }
+    }
+
+    void PaxsenixKeyPassword_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (_updatingKeyText) return;
+        _updatingKeyText = true;
+        try
+        {
+            string key = PaxsenixKeyPassword.Password.Trim();
+            PaxsenixKeyText.Text = key;
+            Settings.PaxsenixApiKey = key;
+            LyricsService.ResetAuthError();
+            UpdatePaxsenixStatus();
+        }
+        finally { _updatingKeyText = false; }
+    }
+
+    void PaxsenixKey_LostFocus(object sender, RoutedEventArgs e)
+    {
+        string key = (_paxsenixKeyMasked ? PaxsenixKeyPassword.Password : PaxsenixKeyText.Text).Trim();
+        Settings.PaxsenixApiKey = key;
+        LyricsService.ResetAuthError();
+        UpdatePaxsenixStatus();
+        TrackLyrics(true);
     }
 }

@@ -1017,51 +1017,94 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid x:Name="SourcesView" Width="320" Height="294" HorizontalAlignment="Center" VerticalAlignment="Top">
-                    <local:RowList x:Name="SourceRows" Margin="10,8,10,0">
-                        <Button Style="{StaticResource BackButton}" Content="ИСТОЧНИКИ ТЕКСТА" Click="SourcesBack_Click"/>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <TextBlock VerticalAlignment="Center" Text="LRCLIB"/>
-                                <local:Toggle x:Name="LrclibSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <TextBlock VerticalAlignment="Center" Text="Deezer"/>
-                                <local:Toggle x:Name="DeezerSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <TextBlock VerticalAlignment="Center" Text="NetEase"/>
-                                <local:Toggle x:Name="NetEaseSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <TextBlock VerticalAlignment="Center" Text="QQ Music"/>
-                                <local:Toggle x:Name="QqMusicSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <TextBlock VerticalAlignment="Center" Text="Kugou"/>
-                                <local:Toggle x:Name="KugouSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource RowButton}" Click="Source_Click">
-                            <Grid>
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="Paxsenix"/>
-                                    <Border Background="#33FF9F0A" CornerRadius="5" Padding="5,1,5,2" Margin="8,1,0,0" VerticalAlignment="Center">
-                                        <TextBlock Text="BETA" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource Orange}"/>
-                                    </Border>
-                                </StackPanel>
-                                <local:Toggle x:Name="PaxsenixSwitch" Style="{StaticResource RowSwitch}"/>
-                            </Grid>
-                        </Button>
-                    </local:RowList>
+                <Grid x:Name="SourcesView" Width="320" Height="396" HorizontalAlignment="Center" VerticalAlignment="Top">
+                    <StackPanel Margin="10,8,10,0" VerticalAlignment="Top">
+                        <local:RowList x:Name="SourceRows">
+                            <Button Style="{StaticResource BackButton}" Content="ИСТОЧНИКИ ТЕКСТА" Click="SourcesBack_Click"/>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" Text="LRCLIB"/>
+                                    <local:Toggle x:Name="LrclibSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" Text="Deezer"/>
+                                    <local:Toggle x:Name="DeezerSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" Text="NetEase"/>
+                                    <local:Toggle x:Name="NetEaseSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" Text="QQ Music"/>
+                                    <local:Toggle x:Name="QqMusicSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <TextBlock VerticalAlignment="Center" Text="Kugou"/>
+                                    <local:Toggle x:Name="KugouSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource RowButton}" Click="Source_Click">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Paxsenix"/>
+                                        <Border Background="#33FF9F0A" CornerRadius="5" Padding="5,1,5,2" Margin="8,1,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="BETA" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource Orange}"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <local:Toggle x:Name="PaxsenixSwitch" Style="{StaticResource RowSwitch}"/>
+                                </Grid>
+                            </Button>
+                        </local:RowList>
+
+                        <StackPanel Margin="2,10,2,0">
+                            <StackPanel Margin="4,0,4,4">
+                                <TextBlock Style="{StaticResource Caption}" Text="PAXSENIX API KEY"/>
+                                <TextBlock Text="Для Apple Music и Musixmatch" FontSize="11.5" Foreground="{StaticResource Dim}" Margin="0,1,0,0"/>
+                            </StackPanel>
+                            <Border Background="#1C1C1E" CornerRadius="12" Margin="0,2,0,0" Padding="12,7">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="PaxsenixKeyText" Grid.Column="0" Background="Transparent" Foreground="White"
+                                             BorderThickness="0" FontSize="12.5" VerticalAlignment="Center"
+                                             FontFamily="Consolas, Segoe UI, sans-serif"
+                                             Visibility="Collapsed" TextChanged="PaxsenixKey_TextChanged" LostFocus="PaxsenixKey_LostFocus"/>
+                                    <PasswordBox x:Name="PaxsenixKeyPassword" Grid.Column="0" Background="Transparent" Foreground="White"
+                                                 BorderThickness="0" FontSize="12.5" VerticalAlignment="Center"
+                                                 PasswordChar="●" FontFamily="Consolas, Segoe UI, sans-serif"
+                                                 PasswordChanged="PaxsenixKeyPassword_PasswordChanged" LostFocus="PaxsenixKey_LostFocus"/>
+                                    <Button x:Name="PaxsenixToggleVisibilityBtn" Grid.Column="1" Style="{StaticResource IconButton}"
+                                            Width="28" Height="28" Margin="2,0" ToolTip="Показать/скрыть ключ"
+                                            Click="PaxsenixToggleVisibility_Click">
+                                        <Path x:Name="PaxsenixEyeIcon" Fill="{StaticResource Dim}" Width="14" Height="14" Stretch="Uniform"
+                                              Data="M12,4.5 C7,4.5 2.73,7.61 1,12 C2.73,16.39 7,19.5 12,19.5 C17,19.5 21.27,16.39 23,12 C21.27,7.61 17,4.5 12,4.5 Z M12,17 C9.24,17 7,14.76 7,12 C7,9.24 9.24,7 12,7 C14.76,7 17,9.24 17,12 C17,14.76 14.76,17 12,17 Z M12,9 C10.34,9 9,10.34 9,12 C9,13.66 10.34,15 12,15 C13.66,15 15,13.66 15,12 C15,10.34 13.66,9 12,9 Z"/>
+                                    </Button>
+                                    <Button x:Name="PaxsenixPasteBtn" Grid.Column="2" Style="{StaticResource IconButton}"
+                                            Width="28" Height="28" ToolTip="Вставить из буфера"
+                                            Click="PaxsenixPaste_Click">
+                                        <Path Fill="{StaticResource Dim}" Width="13" Height="13" Stretch="Uniform"
+                                              Data="M19,2 H14.82 C14.4,0.84 13.3,0 12,0 C10.7,0 9.6,0.84 9.18,2 H5 C3.9,2 3,2.9 3,4 V20 C3,21.1 3.9,22 5,22 H19 C20.1,22 21,21.1 21,20 V4 C21,2.9 20.1,2 19,2 Z M12,2 C12.55,2 13,2.45 13,3 C13,3.55 12.55,4 12,4 C11.45,4 11,3.55 11,3 C11,2.45 11.45,2 12,2 Z M19,20 H5 V4 H7 V6 H17 V4 H19 V20 Z"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                            <StackPanel Orientation="Horizontal" Margin="6,6,6,0" VerticalAlignment="Center">
+                                <Ellipse x:Name="PaxsenixStatusDot" Width="7" Height="7" Fill="#888888" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="PaxsenixStatusText" Text="Без ключа"
+                                           FontSize="11.5" Foreground="{StaticResource Dim}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="UpdatePage" Width="320" Height="150" HorizontalAlignment="Center" VerticalAlignment="Top">

@@ -195,7 +195,8 @@ sealed partial class LyricsService
         return new Candidate(duration, end, lines);
     }
 
-    static async Task<JsonDocument?> AskAsync(string url, string? site = null, string? pass = null, string? body = null)
+
+    static async Task<JsonDocument?> AskAsync(string url, string? site = null, string? pass = null, string? body = null, CancellationToken cancel = default)
     {
         for (int attempt = 0; attempt < Attempts; attempt++)
         {
@@ -213,16 +214,17 @@ sealed partial class LyricsService
                 {
                     request.Headers.UserAgent.ParseAdd(OwnAgent);
                 }
-                using HttpResponseMessage response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                using HttpResponseMessage response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
                 response.EnsureSuccessStatusCode();
-                using var stream = await response.Content.ReadAsStreamAsync();
-                return await JsonDocument.ParseAsync(stream);
+                using var stream = await response.Content.ReadAsStreamAsync(cancel);
+                return await JsonDocument.ParseAsync(stream, cancellationToken: cancel);
             }
             catch (HttpRequestException)
             {
-                if (attempt + 1 < Attempts) await Task.Delay(RetryDelayMs);
+                if (cancel.IsCancellationRequested) return null;
+                if (attempt + 1 < Attempts) await Task.Delay(RetryDelayMs, cancel).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is TaskCanceledException or JsonException)
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException or JsonException)
             {
                 return null;
             }
